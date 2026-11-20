@@ -1,0 +1,15 @@
+{
+  "productName": "Superpowers Studio",
+  "edition": "VIGGTech Edition",
+  "publisher": "VIGGTech",
+  "version": "1.0.0",
+  "license": "MIT",
+  "repository": "https://github.com/VIGGTech/superpower-studio",
+  "upstream": {
+    "name": "obra/superpowers",
+    "version": "7.0.2",
+    "url": "https://github.com/obra/superpowers",
+    "author": "Jesse Vincent",
+    "license": "MIT"
+  }
+}

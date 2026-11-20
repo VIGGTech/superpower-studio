@@ -1,0 +1,10 @@
+Superpowers Studio — VIGGTech Edition (v1.0.0)
+Publisher: VIGGTech
+License: MIT License (Open Source)
+Repository: https://github.com/VIGGTech/superpower-studio
+
+Upstream Attribution:
+Derived from obra/superpowers v7.0.2
+Repository: https://github.com/obra/superpowers
+Original Author: Copyright (c) 2025 Jesse Vincent
+Original License: MIT License (included in LICENSE)

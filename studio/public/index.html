@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Superpowers Studio">
+  <meta name="theme-color" content="#0071e3">
+  <title>Superpowers Studio — Multi-Provider Agent Environment</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div id="toast-stack" class="toast-stack" aria-live="polite"></div>
+
+  <div id="app" class="studio-shell" data-mobile-pane="chat">
+    <!-- Left Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="brand">
+          <span class="brand-dot" id="ws-dot" title="WebSocket status"></span>
+          <div>
+            <div class="brand-title">Superpowers Studio</div>
+            <div class="brand-sub"><span id="brand-version-sub">VIGGTech Edition</span> &middot; <a id="brand-repo-link" href="https://github.com/VIGGTech/superpower-studio" target="_blank" rel="noopener noreferrer" style="color:var(--accent);text-decoration:none">GitHub &#8599;</a></div>
+          </div>
+        </div>
+        <button id="btn-new-session" class="btn btn-primary btn-full">+ New Session</button>
+      </div>
+
+      <div class="sidebar-section-label">Sessions</div>
+      <div id="session-list" class="session-list"></div>
+
+      <div class="sidebar-footer">
+        <button id="btn-providers" class="btn btn-secondary btn-full">Providers &amp; Models</button>
+        <button id="btn-experts" class="btn btn-secondary btn-full">Expert Roster (8+)</button>
+        <button id="btn-service" class="btn btn-ghost btn-full">Background &amp; Service</button>
+      </div>
+    </aside>
+    <div id="resizer-left" class="pane-resizer" title="Drag to resize left sidebar (double-click to reset)"></div>
+
+    <!-- Center Pane: Subordinate Conversation -->
+    <main class="center-pane">
+      <div id="empty-state" class="empty-state">
+        <h2>Superpowers Studio</h2>
+        <p>Run one or more simultaneous autonomous sessions with any provider — Claude, Gemini, Qwen, DeepSeek, Abliteration.ai, OpenRouter, Ollama, or custom OpenAI-compatible APIs.</p>
+        <div class="empty-flow">
+          <span class="flow-pill">1. Add Your API Keys</span>
+          <span>&rarr;</span>
+          <span class="flow-pill">2. Interview Subordinate</span>
+          <span>&rarr;</span>
+          <span class="flow-pill">3. Approve &amp; Dispatch</span>
+        </div>
+        <div class="empty-actions">
+          <button id="btn-empty-providers" class="btn btn-secondary">1. Configure API Keys</button>
+          <button id="btn-empty-new" class="btn btn-primary">2. + Start New Session</button>
+        </div>
+        <div id="empty-version-note" class="small muted" style="margin-top:14px">
+          <a href="https://github.com/VIGGTech/superpower-studio" target="_blank" rel="noopener noreferrer">VIGGTech Edition (MIT Open Source)</a> &middot; Derived from <a href="https://github.com/obra/superpowers" target="_blank" rel="noopener noreferrer">obra/superpowers</a>
+        </div>
+      </div>
+
+      <div id="session-view" class="session-view hidden">
+        <header class="session-header">
+          <div class="session-meta">
+            <div class="session-title-row">
+              <h1 id="session-title">Session</h1>
+              <span id="session-phase-badge" class="badge">interview</span>
+            </div>
+            <div class="session-submeta">
+              <span id="session-workspace-pill" class="meta-pill"></span>
+              <span id="session-models-pill" class="meta-pill"></span>
+            </div>
+          </div>
+          <div class="session-controls">
+            <button id="btn-session-settings" class="btn btn-ghost" title="Edit session title, provider/model per tier, and execution settings">Settings</button>
+            <button id="btn-toggle-rules" class="btn btn-ghost">Rules &amp; Plan</button>
+            <button id="btn-approve" class="btn btn-success">Approve &amp; Dispatch</button>
+            <button id="btn-pause" class="btn btn-warn hidden">Pause</button>
+            <button id="btn-resume" class="btn btn-success hidden">Resume</button>
+            <button id="btn-stop" class="btn btn-danger hidden">Stop</button>
+            <button id="btn-reopen" class="btn btn-ghost hidden">Re-open Interview</button>
+          </div>
+        </header>
+
+        <!-- Inline Error Banner (never silent) -->
+        <div id="session-error-banner" class="error-banner hidden">
+          <span id="session-error-text"></span>
+          <button id="btn-dismiss-error" class="btn-icon" title="Dismiss">&times;</button>
+        </div>
+
+        <!-- Live Mission Progress & ETA Strip -->
+        <div id="mission-strip" class="mission-strip">
+          <div class="mission-strip-top">
+            <div class="mission-strip-left">
+              <span class="status-dot" id="coord-live-dot"></span>
+              <span class="tier-tag">Coordinator</span>
+              <span id="coord-status-text">Idle — awaiting approved rules</span>
+            </div>
+            <div class="mission-strip-right">
+              <span id="mission-counts" class="stat-pill">0 / 0 tasks</span>
+              <span id="mission-elapsed" class="stat-pill">Elapsed: 0s</span>
+              <span id="mission-eta" class="stat-pill eta-pill" title="Estimated remaining time">ETA: —</span>
+              <button id="btn-toggle-uninterrupted" class="btn btn-xs btn-success" title="Keep Coordinator &amp; Experts running automatically until 100% of tasks are done (Subordinate auto-recovers stalls)">Auto-Continue: ON</button>
+              <button id="btn-jump-coord" class="btn btn-xs btn-ghost">Agents &rarr;</button>
+            </div>
+          </div>
+          <div class="progress-track">
+            <div id="mission-progress-bar" class="progress-fill" style="width:0%"></div>
+          </div>
+        </div>
+
+        <!-- Collapsible Rules & Plan Drawer -->
+        <section id="rules-drawer" class="rules-drawer hidden">
+          <div class="rules-grid">
+            <div class="rules-col">
+              <label for="rules-textarea">Session Rules (locked on approval &amp; inherited by Coordinator + all Experts)</label>
+              <textarea id="rules-textarea" rows="5" placeholder="Rules agreed during interview (auto-populated if left blank)…"></textarea>
+            </div>
+            <div class="rules-col">
+              <label for="plan-textarea">Implementation Plan (tasks auto-parsed into Done / Working On / Up Next)</label>
+              <textarea id="plan-textarea" rows="5" placeholder="Step-by-step plan for Coordinator (auto-extracted from chat if left blank)…"></textarea>
+            </div>
+          </div>
+          <div class="rules-actions">
+            <button id="btn-save-rules" class="btn btn-secondary btn-sm">Save Draft</button>
+            <button id="btn-drawer-approve" class="btn btn-success btn-sm">Lock &amp; Dispatch to Coordinator</button>
+          </div>
+        </section>
+
+        <!-- Subordinate Chat Timeline -->
+        <div id="timeline" class="timeline"></div>
+        <div id="streaming-box" class="streaming-box hidden">
+          <div class="msg-header"><span class="tier-tag">Subordinate</span> <span class="muted">streaming…</span></div>
+          <div id="streaming-reasoning" class="reasoning-live hidden"></div>
+          <div id="streaming-text" class="msg-body"></div>
+        </div>
+
+        <!-- Composer with Quick-Action Bar + Paste / Drag-and-Drop / Upload Image Support -->
+        <footer id="composer-wrap" class="composer-wrap">
+          <div id="suggested-actions-bar" class="quick-actions-bar hidden"></div>
+          <div id="quick-actions-bar" class="quick-actions-bar"></div>
+          <div id="companion-choice-bar" class="companion-choice-bar hidden"></div>
+          <div id="pending-attachments" class="attachment-strip hidden"></div>
+          <div id="slash-menu" class="slash-menu hidden"></div>
+          <div class="composer">
+            <input id="image-file-input" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" multiple class="hidden">
+            <button type="button" id="btn-attach-image" class="btn btn-secondary" title="Upload image (or paste with Ctrl+V / drag-and-drop)">+ Image</button>
+            <textarea id="composer-input" rows="2" placeholder="Chat with Subordinate, paste images (Ctrl+V), drag-and-drop plates, or type /skill-name…"></textarea>
+            <button id="btn-send" class="btn btn-primary">Send</button>
+          </div>
+        </footer>
+      </div>
+    </main>
+    <div id="resizer-right" class="pane-resizer" title="Drag to resize right inspector (double-click to reset)"></div>
+
+    <!-- Right Pane: 4-Tab Inspector -->
+    <aside class="right-pane">
+      <nav class="inspector-tabs">
+        <button class="tab-btn active" data-tab="coordinator" id="tab-btn-agents">Agents <span id="agents-count-badge" class="tab-pill">0</span></button>
+        <button class="tab-btn" data-tab="companion">Visual</button>
+        <button class="tab-btn" data-tab="skills">Skills (15)</button>
+        <button class="tab-btn" data-tab="workspace">Workspace</button>
+      </nav>
+
+      <!-- Tab 1: Live Visual Agent Topology & Mission Board -->
+      <div id="tab-coordinator" class="tab-panel active">
+        <div class="panel-toolbar">
+          <span class="muted small">Live Agent Graph &amp; Mission Board</span>
+          <button id="btn-expand-right" class="btn btn-xs btn-ghost" title="Expand or collapse inspector width">Expand</button>
+        </div>
+        <div id="coord-inspector" class="inspector-scroll">
+          <p class="muted pad">Select a session to view live Agents, tasks, and ETA.</p>
+        </div>
+      </div>
+
+      <!-- Tab 2: Sandboxed Visual Companion + Workspace Output Gallery -->
+      <div id="tab-companion" class="tab-panel">
+        <div class="companion-toolbar">
+          <div class="visual-mode-group">
+            <button type="button" id="btn-visual-mode-screens" class="btn btn-xs btn-primary">Screens</button>
+            <button type="button" id="btn-visual-mode-files" class="btn btn-xs btn-ghost">Outputs <span id="visual-files-count"></span></button>
+          </div>
+          <select id="companion-screen-select" class="screen-select" title="Switch Visual Companion screen"></select>
+          <button type="button" id="btn-reload-companion" class="btn btn-xs btn-ghost">Reload</button>
+        </div>
+        <iframe id="companion-frame" class="companion-frame" sandbox="allow-scripts" title="Superpowers Visual Companion"></iframe>
+        <div id="visual-files-pane" class="visual-files-pane hidden">
+          <div class="panel-toolbar">
+            <input id="visual-files-filter" type="search" placeholder="Filter rendered PNG / SVG outputs…">
+          </div>
+          <div id="visual-files-grid" class="visual-files-grid"></div>
+        </div>
+      </div>
+
+      <!-- Tab 3: All 15 Live Superpowers Skills -->
+      <div id="tab-skills" class="tab-panel">
+        <div class="panel-toolbar">
+          <input id="skill-search" type="search" placeholder="Filter 15 Superpowers skills…">
+        </div>
+        <div id="skills-list" class="inspector-scroll"></div>
+      </div>
+
+      <!-- Tab 4: Workspace & Worktree Status -->
+      <div id="tab-workspace" class="tab-panel">
+        <div class="panel-toolbar">
+          <span class="muted">Git &amp; Worktree Status</span>
+          <button id="btn-refresh-ws" class="btn btn-xs btn-ghost">Refresh</button>
+        </div>
+        <div id="workspace-status" class="inspector-scroll"></div>
+      </div>
+    </aside>
+  </div>
+
+  <!-- Mobile Bottom Navigation Bar (shown on phones <= 860px) -->
+  <nav id="mobile-nav" class="mobile-nav" aria-label="Mobile Navigation">
+    <button type="button" class="mobile-nav-btn" data-mpane="sessions">Sessions</button>
+    <button type="button" class="mobile-nav-btn active" data-mpane="chat">Chat</button>
+    <button type="button" class="mobile-nav-btn" data-mpane="agents">Agents</button>
+    <button type="button" class="mobile-nav-btn" data-mpane="visual">Visual</button>
+  </nav>
+
+  <!-- Modal: New Session -->
+  <div id="modal-new-session" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2>New Agentic Session</h2>
+        <button class="btn-icon modal-close" data-close="modal-new-session">&times;</button>
+      </div>
+      <form id="form-new-session" class="modal-body">
+        <label>Session Title
+          <input name="title" required placeholder="e.g., API Service Refactor">
+        </label>
+        <label>Target Workspace Directory
+          <input name="workspacePath" id="new-session-workspace" required placeholder="C:\path\to\project">
+        </label>
+        <label class="inline-check">
+          <input type="checkbox" name="createIfMissing" checked> Create workspace folder automatically if it doesn't exist
+        </label>
+        <label class="inline-check">
+          <input type="checkbox" name="uninterruptedMode" checked> Run uninterrupted until 100% complete (no turn-limit pauses; Subordinate auto-recovers stalls)
+        </label>
+        <div class="tier-model-grid">
+          <fieldset>
+            <legend>Subordinate (Chat &amp; Interview)</legend>
+            <label>Provider <select name="providerId" id="ns-sub-provider"></select></label>
+            <label>Model <input name="model" id="ns-sub-model" list="dl-sub-models" placeholder="default model"><datalist id="dl-sub-models"></datalist></label>
+          </fieldset>
+          <fieldset>
+            <legend>Coordinator (Autonomous Lead)</legend>
+            <label>Provider (optional) <select name="coordinatorProviderId" id="ns-coord-provider"></select></label>
+            <label>Model (optional) <input name="coordinatorModel" id="ns-coord-model" list="dl-coord-models" placeholder="same as Subordinate"><datalist id="dl-coord-models"></datalist></label>
+          </fieldset>
+          <fieldset>
+            <legend>Default Experts / Subagents</legend>
+            <label>Provider (optional) <select name="expertProviderId" id="ns-exp-provider"></select></label>
+            <label>Model (optional) <input name="expertModel" id="ns-exp-model" list="dl-exp-models" placeholder="same as Coordinator"><datalist id="dl-exp-models"></datalist></label>
+          </fieldset>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-ghost modal-close" data-close="modal-new-session">Cancel</button>
+          <button type="submit" class="btn btn-primary">Create Session</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Edit Session Settings -->
+  <div id="modal-session-settings" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2>Session Settings</h2>
+        <button class="btn-icon modal-close" data-close="modal-session-settings">&times;</button>
+      </div>
+      <form id="form-session-settings" class="modal-body">
+        <label>Session Title
+          <input name="title" id="ss-title" required>
+        </label>
+        <label>Workspace Directory (read-only)
+          <input id="ss-workspace" readonly>
+        </label>
+        <div class="tier-model-grid">
+          <fieldset>
+            <legend>Subordinate (Chat &amp; Interview)</legend>
+            <label>Provider <select name="providerId" id="ss-sub-provider"></select></label>
+            <label>Model <input name="model" id="ss-sub-model" list="dl-ss-sub-models" placeholder="default model"><datalist id="dl-ss-sub-models"></datalist></label>
+          </fieldset>
+          <fieldset>
+            <legend>Coordinator (Autonomous Lead)</legend>
+            <label>Provider (optional) <select name="coordinatorProviderId" id="ss-coord-provider"></select></label>
+            <label>Model (optional) <input name="coordinatorModel" id="ss-coord-model" list="dl-ss-coord-models" placeholder="same as Subordinate"><datalist id="dl-ss-coord-models"></datalist></label>
+          </fieldset>
+          <fieldset>
+            <legend>Default Experts / Subagents</legend>
+            <label>Provider (optional) <select name="expertProviderId" id="ss-exp-provider"></select></label>
+            <label>Model (optional) <input name="expertModel" id="ss-exp-model" list="dl-ss-exp-models" placeholder="same as Coordinator"><datalist id="dl-ss-exp-models"></datalist></label>
+          </fieldset>
+        </div>
+        <div class="form-row">
+          <label class="inline-check" style="align-self:end;padding-bottom:6px">
+            <input type="checkbox" name="uninterruptedMode" id="ss-uninterrupted"> Run uninterrupted until 100% complete
+          </label>
+          <label>Max Turns (when Auto-Continue is OFF)
+            <input type="number" name="maxTurns" id="ss-max-turns" min="1" max="10000" value="100">
+          </label>
+        </div>
+        <div class="small muted">Changes apply immediately on the very next Subordinate, Coordinator, or Expert turn.</div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-ghost modal-close" data-close="modal-session-settings">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Settings</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Providers & Models -->
+  <div id="modal-providers" class="modal hidden">
+    <div class="modal-card modal-wide">
+      <div class="modal-header">
+        <h2>Model Providers &amp; API Keys</h2>
+        <button class="btn-icon modal-close" data-close="modal-providers">&times;</button>
+      </div>
+      <div class="modal-split">
+        <div class="modal-list-col">
+          <button id="btn-add-provider" class="btn btn-primary btn-sm btn-full">+ Add Custom API</button>
+          <div id="provider-list" class="modal-list"></div>
+        </div>
+        <form id="form-provider" class="modal-form-col">
+          <div class="form-row">
+            <label>ID <input name="id" required placeholder="custom-api"></label>
+            <label>Display Name <input name="name" required placeholder="My Provider"></label>
+          </div>
+          <div class="form-row">
+            <label>Protocol Kind
+              <select name="kind">
+                <option value="openai-compatible">OpenAI-Compatible (Abliteration.ai, DeepSeek, Qwen, OpenRouter, Ollama…)</option>
+                <option value="anthropic">Anthropic Messages (Claude)</option>
+                <option value="gemini">Google Gemini REST</option>
+              </select>
+            </label>
+            <label>Tool Calling Mode
+              <select name="toolMode">
+                <option value="auto">Auto (native, fallback to prompt XML)</option>
+                <option value="native">Native provider tools</option>
+                <option value="prompt">Prompt XML &lt;tool_call&gt; mode</option>
+              </select>
+            </label>
+          </div>
+          <label>Base URL <input name="baseUrl" required placeholder="https://api.abliteration.ai/v1"></label>
+          <div class="form-row">
+            <label>API Key (leave blank to keep existing or use Env Var)
+              <input name="apiKey" type="password" placeholder="sk-... / ak_...">
+            </label>
+            <label>Env Var Fallback
+              <input name="envVar" placeholder="ABLIT_KEY">
+            </label>
+          </div>
+          <div id="provider-key-status" class="muted small"></div>
+          <label>Default Model
+            <input name="defaultModel" list="dl-prov-models" placeholder="model-id">
+            <datalist id="dl-prov-models"></datalist>
+          </label>
+          <div class="form-actions-inline">
+            <button type="button" id="btn-fetch-models" class="btn btn-secondary btn-sm">Fetch Models</button>
+            <button type="button" id="btn-test-provider" class="btn btn-secondary btn-sm">Test Connection</button>
+            <span id="provider-test-result" class="small"></span>
+          </div>
+          <div class="modal-footer">
+            <button type="button" id="btn-delete-provider" class="btn btn-danger btn-sm">Delete</button>
+            <div style="flex:1"></div>
+            <button type="submit" class="btn btn-primary btn-sm">Save Provider</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Expert Roster -->
+  <div id="modal-experts" class="modal hidden">
+    <div class="modal-card modal-wide">
+      <div class="modal-header">
+        <h2>Expert Agent Roster</h2>
+        <button class="btn-icon modal-close" data-close="modal-experts">&times;</button>
+      </div>
+      <div class="modal-split">
+        <div class="modal-list-col">
+          <button id="btn-add-expert" class="btn btn-primary btn-sm btn-full">+ Add Custom Expert</button>
+          <div id="expert-roster-list" class="modal-list"></div>
+        </div>
+        <form id="form-expert" class="modal-form-col">
+          <div class="form-row">
+            <label>ID <input name="id" required placeholder="senior-dicom-engineer"></label>
+            <label>Name <input name="name" required placeholder="Senior DICOM Engineer"></label>
+          </div>
+          <label>Category <input name="category" placeholder="Medical & Imaging"></label>
+          <label>Specialty Summary <input name="specialty" placeholder="Short summary shown to Coordinator"></label>
+          <label>Expert Persona &amp; Guidelines (System Prompt)
+            <textarea name="systemPrompt" rows="7"></textarea>
+          </label>
+          <div class="form-row">
+            <label>Preferred Provider (optional) <select name="providerId" id="exp-edit-provider"></select></label>
+            <label>Preferred Model (optional) <input name="model" placeholder="inherit from session"></label>
+          </div>
+          <div class="checkbox-row">
+            <label class="inline-check"><input type="checkbox" name="readOnly"> Read-only tools by default</label>
+            <label class="inline-check"><input type="checkbox" name="allowVisualCompanion"> Allow Visual Companion (<code>push_visual_screen</code>)</label>
+          </div>
+          <div class="modal-footer">
+            <button type="button" id="btn-delete-expert" class="btn btn-danger btn-sm">Delete</button>
+            <div style="flex:1"></div>
+            <button type="submit" class="btn btn-primary btn-sm">Save Expert</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Background Service & Persistence -->
+  <div id="modal-service" class="modal hidden">
+    <div class="modal-card" style="width:min(560px,100%)">
+      <div class="modal-header">
+        <h2>Background Daemon &amp; Windows Service</h2>
+        <button class="btn-icon modal-close" data-close="modal-service">&times;</button>
+      </div>
+      <div class="modal-body" style="display:flex;flex-direction:column;gap:12px">
+        <div class="card-box">
+          <div class="card-box-header">
+            <span class="card-box-title">Backend Status</span>
+            <span id="svc-mode-badge" class="badge">checking…</span>
+          </div>
+          <div id="svc-status-details" class="small muted">Loading background service status…</div>
+          <div style="margin-top:8px;display:flex;gap:6px;align-items:center">
+            <input id="svc-url-input" readonly style="flex:1;font-size:11px;padding:5px 8px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text)">
+            <button type="button" id="btn-copy-svc-url" class="btn btn-xs btn-secondary">Copy URL</button>
+          </div>
+          <div class="small muted" style="margin-top:6px">Closing the browser tab never stops running agents — they execute inside this Node.js backend.</div>
+        </div>
+
+        <div class="card-box">
+          <div class="card-box-header">
+            <span class="card-box-title">Auto-Resume After Server Restart</span>
+          </div>
+          <label class="inline-check" style="margin-top:4px">
+            <input type="checkbox" id="chk-auto-resume" checked>
+            Automatically resume interrupted <strong>Auto-Continue: ON</strong> sessions when Studio starts
+          </label>
+        </div>
+
+        <div class="card-box">
+          <div class="card-box-header">
+            <span class="card-box-title">Windows Background Service (Optional)</span>
+            <span id="svc-win-badge" class="badge">checking…</span>
+          </div>
+          <div id="svc-win-desc" class="small muted" style="margin-top:4px">
+            Registers a hidden Windows logon background task (<code>SuperpowersStudioBackground</code>) — zero admin/UAC required — so Studio starts silently in the background when you sign in to Windows and keeps running even if you close terminals or Antigravity.
+          </div>
+          <div class="card-box-actions">
+            <button type="button" id="btn-toggle-win-service" class="btn btn-sm btn-primary">Enable Windows Auto-Start</button>
+          </div>
+        </div>
+
+        <div class="card-box">
+          <div class="card-box-header">
+            <span class="card-box-title">One-Click Windows Icon (Desktop &amp; Start Menu)</span>
+            <span id="svc-icon-badge" class="badge">checking…</span>
+          </div>
+          <div class="small muted" style="margin-top:4px">
+            Creates a native <strong>Superpowers Studio</strong> shortcut icon that silently starts Studio in the background (if not already running) and opens your browser directly to the dashboard.
+          </div>
+          <div class="checkbox-row" style="margin-top:8px">
+            <label class="inline-check"><input type="checkbox" id="chk-icon-desktop" checked> Desktop Icon</label>
+            <label class="inline-check"><input type="checkbox" id="chk-icon-startmenu" checked> Start Menu Icon</label>
+          </div>
+          <div class="card-box-actions">
+            <button type="button" id="btn-toggle-win-icons" class="btn btn-sm btn-primary">Create Windows Icon</button>
+          </div>
+        </div>
+
+        <div class="card-box">
+          <div class="card-box-header">
+            <span class="card-box-title">Mobile Access (Same Wi-Fi LAN + Tailscale VPN)</span>
+            <span id="svc-mobile-badge" class="badge">checking…</span>
+          </div>
+          <div class="small muted" style="margin-top:4px">
+            Control all sessions from your phone over home Wi-Fi or anywhere via <strong>Tailscale</strong>. Scan the QR code with your phone camera (token stays 100% local — never sent to third parties).
+          </div>
+          <div id="svc-mobile-restart-note" class="small hidden" style="margin-top:6px;color:var(--warn);font-weight:600">
+            Restart Studio once so it binds to all network interfaces (0.0.0.0) for phone access.
+          </div>
+          <div class="card-box-actions">
+            <button type="button" id="btn-toggle-mobile-access" class="btn btn-sm btn-primary">Enable Mobile / LAN &amp; Tailscale Access</button>
+          </div>
+          <div id="mobile-qr-section" class="hidden" style="margin-top:10px;display:flex;flex-direction:column;gap:8px">
+            <select id="mobile-endpoint-select" class="screen-select"></select>
+            <div class="mobile-qr-row">
+              <div id="mobile-qr-container" class="mobile-qr-box"></div>
+              <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:6px">
+                <div class="small muted">Scan with iPhone/Android camera or open:</div>
+                <input id="mobile-url-input" readonly style="width:100%;font-size:11px;padding:5px 8px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text)">
+                <div><button type="button" id="btn-copy-mobile-url" class="btn btn-xs btn-secondary">Copy Mobile URL</button></div>
+                <div class="small muted">Tip: On iOS Safari / Android Chrome, tap <strong>Add to Home Screen</strong> for a full-screen app feel.</div>
+              </div>
+            </div>
+            <details class="fold">
+              <summary>Windows Firewall rule (if phone can't reach LAN IP)</summary>
+              <pre id="svc-firewall-cmd" class="small" style="margin:6px 0 0;white-space:pre-wrap"></pre>
+            </details>
+          </div>
+        </div>
+
+        <div class="card-box">
+          <div class="card-box-title" style="margin-bottom:4px">Version &amp; Open-Source Attribution</div>
+          <div id="svc-version-details" class="small muted">
+            Superpowers Studio — VIGGTech Edition (MIT License)<br>
+            GitHub: <a href="https://github.com/VIGGTech/superpower-studio" target="_blank" rel="noopener noreferrer">https://github.com/VIGGTech/superpower-studio</a><br>
+            Derived from <a href="https://github.com/obra/superpowers" target="_blank" rel="noopener noreferrer">https://github.com/obra/superpowers</a> (MIT License)
+          </div>
+        </div>
+
+        <div class="card-box">
+          <div class="card-box-title" style="margin-bottom:4px">Detached CLI Controls</div>
+          <pre class="small" style="margin:0;white-space:pre-wrap">node studio/daemon.mjs start
+node studio/daemon.mjs status
+node studio/daemon.mjs logs
+node studio/daemon.mjs stop</pre>
+        </div>
+      </div>
+      <div class="modal-footer" style="padding:12px 18px">
+        <button type="button" class="btn btn-ghost modal-close" data-close="modal-service">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Inspector Viewer (Skill Markdown / Expert Transcript / Image Lightbox) -->
+  <div id="modal-viewer" class="modal hidden">
+    <div class="modal-card modal-wide">
+      <div class="modal-header">
+        <h2 id="viewer-title">Inspector</h2>
+        <button class="btn-icon modal-close" data-close="modal-viewer">&times;</button>
+      </div>
+      <div id="viewer-body" class="modal-body viewer-body"></div>
+    </div>
+  </div>
+
+  <!-- Modal: In-Page Confirm Dialog (replaces window.confirm for webview compatibility) -->
+  <div id="modal-confirm" class="modal hidden">
+    <div class="modal-card" style="width:min(460px,100%)">
+      <div class="modal-header">
+        <h2 id="confirm-title">Confirm Action</h2>
+      </div>
+      <div id="confirm-message" class="modal-body" style="white-space:pre-wrap"></div>
+      <div class="modal-footer" style="padding:12px 18px">
+        <button type="button" id="confirm-cancel" class="btn btn-ghost">Cancel</button>
+        <button type="button" id="confirm-ok" class="btn btn-primary">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

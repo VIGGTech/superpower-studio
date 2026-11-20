@@ -1,0 +1,11 @@
+{
+  "name": "superpowers-studio",
+  "version": "1.0.0",
+  "description": "Standalone multi-provider autonomous agent environment for Superpowers",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test tests"
+  }
+}

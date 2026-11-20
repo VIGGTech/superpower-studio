@@ -1,4 +1,79 @@
-# Superpowers
+# Superpowers Studio — VIGGTech Edition (v1.0.0)
+
+> **Open Source (MIT License) · Derived from [obra/superpowers](https://github.com/obra/superpowers) v7.0.2**
+>
+> **Superpowers Studio** (`studio/`) extends **obra/superpowers** with a zero-dependency Node.js multi-provider autonomous agent environment, live web dashboard, multimodal visual inspection, detached background persistence, mobile LAN/Tailscale QR control, and a self-contained Windows `.msi` installer.
+
+## How Superpowers Studio Works
+
+Superpowers Studio runs a **3-tier autonomous agent hierarchy** on top of all **15 live Superpowers skills** (`skills/*/SKILL.md`):
+
+```text
+You (Desktop Browser or Mobile Phone via LAN / Tailscale QR)
+  │
+  ▼
+Tier 1 · Subordinate Agent (Interview, Planning & Supervisor Watchdog)
+  • Interviews you, accepts pasted screenshots, drafts Rules & Plan
+  • Stays responsive mid-run and relays course corrections cleanly
+  • Auto-recovers stalled or errored Coordinator turns until 100% done
+  │
+  ▼  Approve & Dispatch (locks immutable Rules & parses Mission Tasks)
+Tier 2 · Coordinator Agent (Autonomous Execution Lead)
+  • Runs in the background Node.js server (closing the browser never stops work)
+  • Tracks live Mission Progress (Working On / Up Next / Done + ETA)
+  • Enforces a 100% Task Completion Gate when Auto-Continue is ON
+  • Isolates parallel sessions automatically with git worktrees
+  │
+  ▼  Parallel spawn_expert()
+Tier 3 · Specialist Experts (8 Pre-Seeded + Custom Roster)
+  • Software Implementer · Code Reviewer · Systematic Debugger · Researcher
+  • Senior DICOM Engineer · HL7/FHIR Engineer · Anatomical Illustrator · Human Physiology Expert
+  • Every Expert inherits your locked Session Rules and can visually inspect PNG/SVG outputs
+```
+
+## How to Install & Use It
+
+### 1. Install (Windows `.msi` — Zero Prerequisites)
+1. Download **`SuperpowersStudio-VIGGTech-1.0.0-x64.msi`** from [Releases](https://github.com/VIGGTech/superpower-studio/releases).
+2. Run the installer (installs per-user into `%LOCALAPPDATA%\Programs\SuperpowersStudio` with bundled Node.js v20 — **no admin rights required**).
+3. On the Finish screen, keep **"Launch Superpowers Studio and open Getting Started Guide"** checked — Studio starts in the background and opens in your browser.
+
+*Or run directly from source (Node.js 20+ on Windows / macOS / Linux):*
+```bash
+git clone https://github.com/VIGGTech/superpower-studio.git
+cd superpower-studio
+node studio/daemon.mjs open   # starts detached background daemon & opens browser
+```
+
+### 2. Add Your API Keys
+- Click **1. Configure API Keys** on the welcome screen (or **Providers & Models** in the bottom-left sidebar).
+- Pick any provider — **Anthropic (Claude)**, **Google Gemini**, **DeepSeek**, **Alibaba Qwen**, **Abliteration.ai**, **OpenRouter**, **Ollama (local)**, or **+ Add Custom API** — paste your key, click **Test**, and click **Save Provider**.
+- All API keys and sessions stay **100% local** (`%LOCALAPPDATA%\SuperpowersStudio` or `.superpowers-studio/`).
+
+### 3. Run a Session (Interview → Dispatch → Autonomous Execution)
+1. Click **+ New Session**, choose a workspace folder (created automatically if missing), and pick your **Subordinate**, **Coordinator**, and **Expert** models (editable live anytime via **Settings**).
+2. Chat with the **Subordinate** — paste reference screenshots (`Ctrl+V` / `+ Image`), type `/skill-name` to invoke any of the 15 Superpowers skills, or click the **Quick Actions** buttons above the composer.
+3. Click **Approve & Dispatch** to lock your rules and launch the **Coordinator** and parallel **Experts**.
+4. Monitor & steer live:
+   - **Agents tab:** Watch active agents pinned at the top while completed Experts & `Done Tasks` auto-collapse into expandable drawers.
+   - **Visual tab:** Inspect sandboxed HTML screens (with automatic workspace image inlining + screen switcher) or click **Outputs** to browse and zoom every generated PNG/SVG in your workspace.
+   - **Resizable layout:** Drag the vertical dividers to resize sidebars (double-click to reset).
+   - **Steer anytime:** Chat with the Subordinate or click **Relay to Coordinator** without stopping execution.
+
+### 4. Background Persistence, Windows Auto-Start & Mobile Phone Control
+Open **Background & Service** (bottom-left sidebar) to:
+- Toggle **Auto-Resume After Server Restart** for `Auto-Continue: ON` sessions.
+- Enable **Windows Auto-Start at Logon** (hidden background task, zero admin required) or create/remove **Desktop & Start Menu Icons**.
+- Enable **Mobile Access (Same Wi-Fi LAN + Tailscale VPN)** and scan the locally-generated **QR code** with your phone camera (on phones, Studio switches to a bottom-tab interface: **Sessions | Chat | Agents | Visual**).
+
+For full CLI commands, security architecture, and `.msi` build instructions, see **[studio/README.md](studio/README.md)**.
+
+### Open-Source License & Upstream Attribution
+Released under the **MIT License** ([LICENSE](LICENSE) · [NOTICE.txt](NOTICE.txt)). All 15 upstream skills in `skills/` remain intact and attributed to **[Jesse Vincent / obra/superpowers](https://github.com/obra/superpowers)** (`v7.0.2`).
+
+---
+
+# Superpowers (Upstream Skills & Methodology)
 
 Superpowers is a complete software development methodology for your coding agents, built on top of a set of composable skills and some initial instructions that make sure your agent uses them.
 
