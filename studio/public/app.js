@@ -1476,20 +1476,54 @@ function wireExpertPresetButtons(presetsEl, pickerEl) {
 
 function renderExpertDefaultSkillsPicker(selectedSkills = []) {
   const el = $('#exp-default-skills');
+  const selEl = $('#exp-add-skill-select');
   if (!el) return;
-  const sel = new Set(Array.isArray(selectedSkills) ? selectedSkills : []);
-  el.innerHTML = state.skills.map((s) => `
-    <label class="skill-chip-option" title="${escapeHtml(s.description || '')}">
-      <input type="checkbox" data-exp-skill="${escapeHtml(s.name)}" ${sel.has(s.name) ? 'checked' : ''}>
-      ${escapeHtml(s.name)}
-    </label>
-  `).join('');
+  const list = [...new Set(Array.isArray(selectedSkills) ? selectedSkills.filter(Boolean) : [])];
+  state.editingExpertSkills = list;
+  const selSet = new Set(list);
+  const byName = new Map(state.skills.map((s) => [s.name, s]));
+
+  if (list.length === 0) {
+    el.innerHTML = '<span class="small muted">None selected — expert can still load any skill on demand.</span>';
+  } else {
+    el.innerHTML = list.map((name) => {
+      const meta = byName.get(name);
+      const cls = meta?.pack === 'engineering' ? 'pack-engineering' : 'pack-core';
+      return `
+        <span class="skill-tag-chip ${cls}" title="${escapeHtml(meta?.description || '')}">
+          <span>${escapeHtml(name)}</span>
+          <button type="button" class="skill-tag-remove" data-remove-skill="${escapeHtml(name)}" aria-label="Remove ${escapeHtml(name)}">&times;</button>
+        </span>`;
+    }).join('');
+    el.querySelectorAll('.skill-tag-remove').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        renderExpertDefaultSkillsPicker(state.editingExpertSkills.filter((x) => x !== btn.dataset.removeSkill));
+      });
+    });
+  }
+
+  if (selEl) {
+    const remaining = state.skills.filter((s) => !selSet.has(s.name));
+    const engSkills = remaining.filter((s) => s.pack === 'engineering');
+    const coreSkills = remaining.filter((s) => s.pack !== 'engineering');
+    let opts = '<option value="">+ Add skill…</option>';
+    if (engSkills.length > 0) {
+      opts += `<optgroup label="Engineering Pack (${engSkills.length})">${engSkills.map((s) => `<option value="${escapeHtml(s.name)}">${escapeHtml(s.name)}</option>`).join('')}</optgroup>`;
+    }
+    if (coreSkills.length > 0) {
+      opts += `<optgroup label="Superpowers Core (${coreSkills.length})">${coreSkills.map((s) => `<option value="${escapeHtml(s.name)}">${escapeHtml(s.name)}</option>`).join('')}</optgroup>`;
+    }
+    selEl.innerHTML = opts;
+    selEl.value = '';
+    selEl.onchange = () => {
+      if (!selEl.value) return;
+      renderExpertDefaultSkillsPicker([...(state.editingExpertSkills || []), selEl.value]);
+    };
+  }
 }
 
 function readExpertDefaultSkillsPicker() {
-  const el = $('#exp-default-skills');
-  if (!el) return [];
-  return [...el.querySelectorAll('input[data-exp-skill]:checked')].map((b) => b.dataset.expSkill);
+  return [...(state.editingExpertSkills || [])];
 }
 
 async function saveSessionEnabledExperts(nextIds) {

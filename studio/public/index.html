@@ -7,7 +7,7 @@
   <meta name="apple-mobile-web-app-title" content="Superpowers Studio">
   <meta name="theme-color" content="#0071e3">
   <title>Superpowers Studio — Multi-Provider Agent Environment</title>
-  <link rel="stylesheet" href="/styles.css?v=3">
+  <link rel="stylesheet" href="/styles.css?v=4">
 </head>
 <body>
   <div id="toast-stack" class="toast-stack" aria-live="polite"></div>
@@ -420,6 +420,7 @@
           <button id="btn-add-expert" class="btn btn-primary btn-sm btn-full">+ Add Custom Expert</button>
           <div id="experts-session-bar" class="experts-session-bar hidden">
             <div class="small" id="experts-session-label">Active in current session</div>
+            <div class="small muted">Check experts to enable for this session:</div>
             <div class="preset-btn-group" id="roster-session-presets">
               <button type="button" class="btn btn-xs btn-ghost" data-preset="all">All</button>
               <button type="button" class="btn btn-xs btn-ghost" data-preset="software">Web</button>
@@ -448,9 +449,12 @@
           </div>
           <div class="session-scope-box">
             <div class="session-scope-header">
-              <strong>Default Skills (auto-loaded when this expert spawns)</strong>
+              <strong>Default Skills (auto-loaded when spawned)</strong>
+              <select id="exp-add-skill-select" class="skill-add-select" aria-label="Add default skill">
+                <option value="">+ Add skill…</option>
+              </select>
             </div>
-            <div id="exp-default-skills" class="skill-chip-picker"></div>
+            <div id="exp-default-skills" class="skill-tag-list"></div>
           </div>
           <div class="modal-footer">
             <button type="button" id="btn-delete-expert" class="btn btn-danger btn-sm">Delete</button>
@@ -648,6 +652,6 @@ node studio/daemon.mjs stop</pre>
     </div>
   </div>
 
-  <script type="module" src="/app.js?v=3"></script>
+  <script type="module" src="/app.js?v=4"></script>
 </body>
 </html>
