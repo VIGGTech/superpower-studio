@@ -41,12 +41,13 @@ code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospac
 
 .studio-shell {
   display: grid;
-  grid-template-columns: var(--left-w, 250px) 5px minmax(360px, 1fr) 5px var(--right-w, 420px);
+  grid-template-columns: min(var(--left-w, 250px), 26vw) 5px minmax(0, 1fr) 5px min(var(--right-w, 420px), 44vw);
   height: 100vh;
+  width: 100%;
   overflow: hidden;
 }
 .studio-shell.expanded-right {
-  grid-template-columns: var(--left-w, 220px) 5px minmax(300px, 0.75fr) 5px minmax(540px, 1.25fr);
+  grid-template-columns: min(var(--left-w, 220px), 22vw) 5px minmax(0, 0.75fr) 5px minmax(0, 1.25fr);
 }
 .studio-shell.resizing {
   user-select: none;
@@ -338,13 +339,17 @@ code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospac
 
 .timeline {
   flex: 1;
+  min-width: 0;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 14px;
   display: flex;
   flex-direction: column;
   gap: 12px;
 }
 .msg {
+  min-width: 0;
+  max-width: 100%;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -776,7 +781,7 @@ legend { font-size: 12px; font-weight: 700; color: var(--accent); padding: 0 6px
 .mobile-nav { display: none; }
 
 @media (max-width: 1100px) {
-  .studio-shell { grid-template-columns: var(--left-w, 210px) 5px 1fr 5px var(--right-w, 330px); }
+  .studio-shell { grid-template-columns: min(var(--left-w, 200px), 24vw) 5px minmax(0, 1fr) 5px min(var(--right-w, 340px), 42vw); }
 }
 @media (max-width: 860px) {
   .studio-shell {
