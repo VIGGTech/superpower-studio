@@ -473,6 +473,9 @@ async function confirmDeleteSession() {
     if (res?.branchDeleted) parts.push('git branch deleted');
     if (res?.workspaceDeleted) parts.push('workspace directory erased');
     showToast(`${parts.join(' · ')}.`, 'info', 4500);
+    if (Array.isArray(res?.warnings) && res.warnings.length > 0) {
+      showToast(res.warnings.join(' '), 'warn', 8000);
+    }
     await refreshSessions();
     renderMain();
   } catch (err) {

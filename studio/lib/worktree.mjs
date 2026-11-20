@@ -119,6 +119,38 @@ export async function prepareSessionWorkspace({ session, activeSessions = [], da
   };
 }
 
+function removeDirResilient(targetDir) {
+  if (!fs.existsSync(targetDir)) return { removed: true, warning: null };
+  try {
+    fs.rmSync(targetDir, { recursive: true, force: true, maxRetries: 6, retryDelay: 80 });
+    return { removed: !fs.existsSync(targetDir), warning: null };
+  } catch (err) {
+    // Best-effort recursive removal of unlocked children on Windows EBUSY/EPERM
+    const sweep = (dir) => {
+      let entries = [];
+      try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+      for (const ent of entries) {
+        const full = path.join(dir, ent.name);
+        try {
+          if (ent.isDirectory()) {
+            sweep(full);
+            fs.rmdirSync(full);
+          } else {
+            fs.unlinkSync(full);
+          }
+        } catch { /* locked entry — skip */ }
+      }
+    };
+    sweep(targetDir);
+    try { fs.rmdirSync(targetDir); } catch { /* still locked */ }
+    if (!fs.existsSync(targetDir)) return { removed: true, warning: null };
+    return {
+      removed: false,
+      warning: `Folder "${targetDir}" is locked by another process (${err.code || err.message}). Close any Explorer/terminal window using it and delete the leftover folder manually.`,
+    };
+  }
+}
+
 function resolveIsolatedWorktreeRoot(session, dataDir = '') {
   if (!session?.id || !session?.effectiveWorkDir) return null;
   const effDir = path.resolve(session.effectiveWorkDir);
@@ -163,6 +195,7 @@ export async function cleanupSessionWorktree({ session, dataDir = '', force = fa
   }
 
   let removed = false;
+  let warning = null;
 
   if (!fs.existsSync(wtDir)) {
     removed = true;
@@ -186,31 +219,35 @@ export async function cleanupSessionWorktree({ session, dataDir = '', force = fa
         args.push(wtDir);
         try {
           await runGit(args, primaryRoot);
+          removed = true;
         } catch {
           if (force) {
-            fs.rmSync(wtDir, { recursive: true, force: true, maxRetries: 6, retryDelay: 80 });
+            const rm = removeDirResilient(wtDir);
+            removed = rm.removed;
+            warning = rm.warning;
             try { await runGit(['worktree', 'prune'], primaryRoot); } catch { /* ignore */ }
           } else {
             throw new Error(`Failed to remove worktree at ${wtDir}`);
           }
         }
-        removed = true;
       } else if (force) {
-        fs.rmSync(wtDir, { recursive: true, force: true, maxRetries: 6, retryDelay: 80 });
-        removed = true;
+        const rm = removeDirResilient(wtDir);
+        removed = rm.removed;
+        warning = rm.warning;
       }
     } else {
-      // Orphaned/partial worktree folder whose .git pointer is already gone — safe to remove wtDir directly
-      fs.rmSync(wtDir, { recursive: true, force: true, maxRetries: 6, retryDelay: 80 });
+      // Orphaned/partial worktree folder whose .git pointer is already gone — remove resiliently
+      const rm = removeDirResilient(wtDir);
+      removed = rm.removed;
+      warning = rm.warning;
       if (primaryRoot) {
         try { await runGit(['worktree', 'prune'], primaryRoot); } catch { /* ignore */ }
       }
-      removed = true;
     }
   }
 
   let branchDeleted = false;
-  if (removed && deleteBranch && primaryRoot && String(session.worktreeBranch).startsWith('superpowers/')) {
+  if ((removed || force) && deleteBranch && primaryRoot && String(session.worktreeBranch).startsWith('superpowers/')) {
     try {
       await runGit(['branch', '-D', session.worktreeBranch], primaryRoot);
       branchDeleted = true;
@@ -219,7 +256,7 @@ export async function cleanupSessionWorktree({ session, dataDir = '', force = fa
     }
   }
 
-  return { removed, branchDeleted };
+  return { removed, branchDeleted, warning };
 }
 
 function normalizeForCompare(p) {
@@ -333,6 +370,6 @@ export function purgeWorkspaceDirectory({ session, allSessions = [], repoRoot = 
   if (!fs.existsSync(safety.targetDir)) {
     return { deleted: false, blocked: false, path: safety.targetDir, reason: 'Directory already absent.' };
   }
-  fs.rmSync(safety.targetDir, { recursive: true, force: true, maxRetries: 6, retryDelay: 80 });
-  return { deleted: true, blocked: false, path: safety.targetDir, reason: null };
+  const rm = removeDirResilient(safety.targetDir);
+  return { deleted: rm.removed, blocked: false, path: safety.targetDir, reason: rm.warning };
 }

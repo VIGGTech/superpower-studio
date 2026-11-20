@@ -773,6 +773,8 @@ export async function createStudioServer({
 
           let workspaceDeleted = false;
           let workspaceBlockedReason = null;
+          const warnings = [];
+          if (wt.warning) warnings.push(wt.warning);
           if (deleteWorkspace) {
             const wsRes = purgeWorkspaceDirectory({
               session,
@@ -782,6 +784,9 @@ export async function createStudioServer({
             });
             workspaceDeleted = Boolean(wsRes.deleted);
             if (wsRes.blocked) workspaceBlockedReason = wsRes.reason;
+            else if (!wsRes.deleted && wsRes.reason && wsRes.reason !== 'Directory already absent.') {
+              warnings.push(wsRes.reason);
+            }
           }
 
           store.deleteSession(id);
@@ -793,6 +798,7 @@ export async function createStudioServer({
             worktreeBranch: session.worktreeBranch,
             workspaceDeleted,
             workspaceBlockedReason,
+            warnings,
           });
         }
       }
