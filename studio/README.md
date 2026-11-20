@@ -93,17 +93,18 @@ node studio/server.mjs
 ### Step 1 — Add Your API Keys
 1. Click **1. Configure API Keys** on the welcome screen (or **Providers & Models** in the bottom-left sidebar).
 2. Pick any pre-configured provider — **Anthropic (Claude)**, **Google Gemini**, **DeepSeek**, **Alibaba Qwen**, **Abliteration.ai**, **OpenRouter**, **Ollama (local)** — or click **+ Add Custom API** for any OpenAI-compatible endpoint (vLLM, LM Studio, LiteLLM, etc.).
-3. Paste your API key (or set the matching environment variable), click **Fetch Models** / **Test** to verify connectivity, and click **Save Provider**.
+3. Paste your API key (or set the matching environment variable), click **Fetch Models** to populate the full model dropdown (with a **`Custom model ID…`** fallback across all modals), click **Test Connection** to verify, and click **Save Provider**.
 
 ### Step 2 — Start a New Session
 1. Click **+ New Session** in the left sidebar.
 2. Enter a **Session Title** and **Target Workspace Directory** (checked by default to auto-create the folder if it doesn't exist yet).
-3. Choose providers & models per tier:
+3. Choose providers & models per tier from the fetched model dropdowns (or **`Custom model ID…`**):
    - **Subordinate:** conversational planning & watchdog supervision
    - **Coordinator:** autonomous execution lead (optional — inherits Subordinate if blank)
    - **Default Experts:** specialist subagents (optional — inherits Coordinator if blank)
-4. Keep **Run uninterrupted until 100% complete** checked for hands-free execution, and click **Create Session**.
-   - *Tip:* You can change an existing session's title, provider/model per tier, or execution mode live at any time by clicking **Settings** in the top-right header (or clicking the `Sub: ... · Coord: ...` pill).
+4. Pick your **Skill Packs** (Superpowers Core stays on as the primary router; toggle **Engineering Pack** per session) and **Active Experts** using one-click presets (**All**, **Software & Web**, **Medical & Imaging**, **None**) or individual checkboxes.
+5. Keep **Run uninterrupted until 100% complete** checked for hands-free execution, and click **Create Session**.
+   - *Tip:* Click **Settings** (or the `Sub: ... · Coord: ...` pill) anytime to change models, skill packs, or active experts live — or open **Expert Roster** to toggle experts for the active session and customize each expert's auto-loaded **Default Skills** (tag chips + grouped **`+ Add skill…`** dropdown).
 
 ### Step 3 — Interview, Refine & Dispatch
 1. Chat with the **Subordinate** to describe your goal. Paste reference images with `Ctrl+V` (or drag-and-drop / click `+ Image`), or type `/skill-name` to invoke any Superpowers skill.
@@ -118,6 +119,7 @@ node studio/server.mjs
 - **Visual Tab:** Switch between **Screens** (sandboxed HTML screens pushed by agents with automatic workspace image inlining + screen dropdown) and **Outputs** (thumbnail gallery of every `.png`/`.svg`/`.jpg`/`.webp` rendered in the workspace with click-to-zoom lightbox).
 - **Steer Without Stopping:** Keep chatting with the Subordinate anytime, or type instructions and click **Relay to Coordinator** to inject a directive cleanly at the next turn boundary.
 - **Pause / Stop / Retry:** Use **Auto-Continue: ON/OFF** in the mission bar, **Pause**, **Stop**, or **Retry / Resume** anytime.
+- **Delete / Purge Session:** Click the **`×`** button on a session card (or **Delete / Purge Session…** inside **Settings**) to cleanly erase session history, force-remove its isolated worktree & `superpowers/*` branch, and optionally delete a dedicated workspace folder (protected folders such as the Studio repo, home directory, or folders shared by another session can never be accidentally deleted).
 
 ### Step 5 — Background Persistence, Windows Auto-Start & Mobile Access
 Click **Background & Service** in the bottom-left sidebar to configure:
