@@ -1354,20 +1354,100 @@ function populateProviderSelect(selectEl, includeInherit = false) {
   ).join('');
 }
 
-function bindProviderModelDatalist(selectEl, inputEl, datalistEl) {
-  const sync = (isChange = false) => {
-    const p = state.providers.find((x) => x.id === selectEl.value);
-    datalistEl.innerHTML = (p?.models || []).map((m) => `<option value="${escapeHtml(m)}">`).join('');
-    if (selectEl.id === 'ns-sub-provider' || selectEl.id === 'ss-sub-provider') {
-      if (isChange || !inputEl.value) {
-        inputEl.value = p?.defaultModel || '';
-      }
-    } else if (isChange) {
-      inputEl.value = p?.defaultModel || '';
+const CUSTOM_MODEL_VALUE = '__custom__';
+
+function getProviderModelOptions(provider) {
+  if (!provider) return [];
+  const raw = [...(Array.isArray(provider.models) ? provider.models : [])];
+  if (provider.defaultModel && !raw.includes(provider.defaultModel)) {
+    raw.unshift(provider.defaultModel);
+  }
+  return [...new Set(raw.map((m) => String(m || '').trim()).filter(Boolean))];
+}
+
+function syncModelCombo(selectEl, inputEl, models, { allowInherit = false, inheritLabel = '(Inherit / default)' } = {}) {
+  if (!selectEl || !inputEl) return;
+  const list = [...new Set((models || []).map((m) => String(m || '').trim()).filter(Boolean))];
+  const current = String(inputEl.value || '').trim();
+
+  if (list.length === 0) {
+    selectEl.classList.add('hidden');
+    inputEl.classList.remove('hidden');
+    return;
+  }
+
+  selectEl.classList.remove('hidden');
+  let opts = '';
+  if (allowInherit) {
+    opts += `<option value="">${escapeHtml(inheritLabel)}</option>`;
+  }
+  opts += list.map((m) => `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`).join('');
+  opts += `<option value="${CUSTOM_MODEL_VALUE}">Custom model ID…</option>`;
+  selectEl.innerHTML = opts;
+
+  if (!current && allowInherit) {
+    selectEl.value = '';
+    inputEl.classList.add('hidden');
+  } else if (list.includes(current)) {
+    selectEl.value = current;
+    inputEl.classList.add('hidden');
+  } else if (!current && !allowInherit) {
+    selectEl.value = list[0];
+    inputEl.value = list[0];
+    inputEl.classList.add('hidden');
+  } else {
+    selectEl.value = CUSTOM_MODEL_VALUE;
+    inputEl.classList.remove('hidden');
+  }
+
+  selectEl.onchange = () => {
+    if (selectEl.value === CUSTOM_MODEL_VALUE) {
+      inputEl.classList.remove('hidden');
+      inputEl.focus();
+    } else {
+      inputEl.value = selectEl.value;
+      inputEl.classList.add('hidden');
     }
   };
-  selectEl.onchange = () => sync(true);
-  sync(false);
+}
+
+function bindTierModelCombos({
+  subProviderEl, subSelectEl, subInputEl,
+  coordProviderEl, coordSelectEl, coordInputEl,
+  expProviderEl, expSelectEl, expInputEl,
+}) {
+  const findProv = (id) => state.providers.find((x) => x.id === id) || null;
+
+  const refresh = (changedTier = null) => {
+    const subProv = findProv(subProviderEl.value);
+    const coordProv = findProv(coordProviderEl.value) || subProv;
+    const expProv = findProv(expProviderEl.value) || coordProv;
+
+    if (changedTier === 'sub' || (!subInputEl.value && subProv?.defaultModel)) {
+      subInputEl.value = subProv?.defaultModel || '';
+    }
+    if (changedTier === 'coord') {
+      coordInputEl.value = coordProviderEl.value ? (findProv(coordProviderEl.value)?.defaultModel || '') : '';
+    }
+    if (changedTier === 'exp') {
+      expInputEl.value = expProviderEl.value ? (findProv(expProviderEl.value)?.defaultModel || '') : '';
+    }
+
+    syncModelCombo(subSelectEl, subInputEl, getProviderModelOptions(subProv), { allowInherit: false });
+    syncModelCombo(coordSelectEl, coordInputEl, getProviderModelOptions(coordProv), {
+      allowInherit: true,
+      inheritLabel: coordProviderEl.value ? `(Provider default: ${coordProv?.defaultModel || 'default'})` : '(Same as Subordinate)',
+    });
+    syncModelCombo(expSelectEl, expInputEl, getProviderModelOptions(expProv), {
+      allowInherit: true,
+      inheritLabel: expProviderEl.value ? `(Provider default: ${expProv?.defaultModel || 'default'})` : '(Same as Coordinator)',
+    });
+  };
+
+  subProviderEl.onchange = () => refresh('sub');
+  coordProviderEl.onchange = () => refresh('coord');
+  expProviderEl.onchange = () => refresh('exp');
+  refresh(null);
 }
 
 // ----- Per-Session Experts & Skill Packs Helpers -----
@@ -1560,9 +1640,11 @@ function openSessionSettingsModal() {
   renderExpertCheckboxPicker($('#ss-expert-picker'), session.enabledExpertIds);
   wireExpertPresetButtons($('#ss-expert-presets'), $('#ss-expert-picker'));
 
-  bindProviderModelDatalist($('#ss-sub-provider'), $('#ss-sub-model'), $('#dl-ss-sub-models'));
-  bindProviderModelDatalist($('#ss-coord-provider'), $('#ss-coord-model'), $('#dl-ss-coord-models'));
-  bindProviderModelDatalist($('#ss-exp-provider'), $('#ss-exp-model'), $('#dl-ss-exp-models'));
+  bindTierModelCombos({
+    subProviderEl: $('#ss-sub-provider'), subSelectEl: $('#ss-sub-model-select'), subInputEl: $('#ss-sub-model'),
+    coordProviderEl: $('#ss-coord-provider'), coordSelectEl: $('#ss-coord-model-select'), coordInputEl: $('#ss-coord-model'),
+    expProviderEl: $('#ss-exp-provider'), expSelectEl: $('#ss-exp-model-select'), expInputEl: $('#ss-exp-model'),
+  });
   $('#modal-session-settings').classList.remove('hidden');
 }
 
@@ -1577,9 +1659,11 @@ function openNewSessionModal() {
   renderSkillPackPicker($('#ns-skill-packs'), null);
   renderExpertCheckboxPicker($('#ns-expert-picker'), null);
   wireExpertPresetButtons($('#ns-expert-presets'), $('#ns-expert-picker'));
-  bindProviderModelDatalist($('#ns-sub-provider'), $('#ns-sub-model'), $('#dl-sub-models'));
-  bindProviderModelDatalist($('#ns-coord-provider'), $('#ns-coord-model'), $('#dl-coord-models'));
-  bindProviderModelDatalist($('#ns-exp-provider'), $('#ns-exp-model'), $('#dl-exp-models'));
+  bindTierModelCombos({
+    subProviderEl: $('#ns-sub-provider'), subSelectEl: $('#ns-sub-model-select'), subInputEl: $('#ns-sub-model'),
+    coordProviderEl: $('#ns-coord-provider'), coordSelectEl: $('#ns-coord-model-select'), coordInputEl: $('#ns-coord-model'),
+    expProviderEl: $('#ns-exp-provider'), expSelectEl: $('#ns-exp-model-select'), expInputEl: $('#ns-exp-model'),
+  });
   $('#modal-new-session').classList.remove('hidden');
 }
 
@@ -1591,12 +1675,15 @@ function openProvidersModal() {
 
 function renderProviderList() {
   const list = $('#provider-list');
-  list.innerHTML = state.providers.map((p) => `
-    <div class="modal-list-item ${p.id === state.selectedProviderId ? 'active' : ''}" data-pid="${escapeHtml(p.id)}">
-      <div>${escapeHtml(p.name)}</div>
-      <div class="small muted">${escapeHtml(p.kind)} · ${p.hasKey ? 'Key set' : 'No key'}</div>
-    </div>
-  `).join('');
+  list.innerHTML = state.providers.map((p) => {
+    const mCount = getProviderModelOptions(p).length;
+    const mHint = mCount > 0 ? ` · ${mCount} model${mCount === 1 ? '' : 's'}` : '';
+    return `
+      <div class="modal-list-item ${p.id === state.selectedProviderId ? 'active' : ''}" data-pid="${escapeHtml(p.id)}">
+        <div>${escapeHtml(p.name)}</div>
+        <div class="small muted">${escapeHtml(p.kind)} · ${p.hasKey ? 'Key set' : 'No key'}${mHint}</div>
+      </div>`;
+  }).join('');
   list.querySelectorAll('.modal-list-item').forEach((el) => {
     el.addEventListener('click', () => selectProviderInModal(el.dataset.pid));
   });
@@ -1612,6 +1699,7 @@ function selectProviderInModal(id) {
     f.reset();
     f.elements.id.readOnly = false;
     $('#provider-key-status').textContent = 'New custom provider';
+    syncModelCombo($('#prov-default-model-select'), $('#prov-default-model'), [], { allowInherit: false });
     return;
   }
   f.elements.id.value = p.id;
@@ -1623,14 +1711,34 @@ function selectProviderInModal(id) {
   f.elements.envVar.value = p.envVar || '';
   f.elements.toolMode.value = p.toolMode || 'auto';
   f.elements.defaultModel.value = p.defaultModel || '';
-  $('#dl-prov-models').innerHTML = (p.models || []).map((m) => `<option value="${escapeHtml(m)}">`).join('');
+  syncModelCombo($('#prov-default-model-select'), $('#prov-default-model'), getProviderModelOptions(p), { allowInherit: false });
   $('#provider-key-status').textContent = p.hasKey
     ? `Active key source: ${p.keySource} (${p.keyPreview})`
     : 'No API key saved or found in environment variable.';
 }
 
+function syncExpertModalModelCombo() {
+  const provSel = $('#exp-edit-provider');
+  const modelSel = $('#exp-edit-model-select');
+  const modelInput = $('#exp-edit-model');
+  if (!provSel || !modelSel || !modelInput) return;
+  const fallbackProvId = state.activeDetail?.session?.expertProviderId
+    || state.activeDetail?.session?.coordinatorProviderId
+    || state.activeDetail?.session?.providerId
+    || '';
+  const p = state.providers.find((x) => x.id === (provSel.value || fallbackProvId)) || null;
+  syncModelCombo(modelSel, modelInput, getProviderModelOptions(p), {
+    allowInherit: true,
+    inheritLabel: '(Inherit from session)',
+  });
+}
+
 function openExpertsModal() {
   populateProviderSelect($('#exp-edit-provider'), true);
+  $('#exp-edit-provider').onchange = () => {
+    $('#exp-edit-model').value = '';
+    syncExpertModalModelCombo();
+  };
   renderExpertRosterList();
   selectExpertInModal(state.selectedExpertId || state.expertsRoster[0]?.id);
   $('#modal-experts').classList.remove('hidden');
@@ -1837,6 +1945,7 @@ function selectExpertInModal(id) {
     f.reset();
     f.elements.id.readOnly = false;
     renderExpertDefaultSkillsPicker([]);
+    syncExpertModalModelCombo();
     return;
   }
   f.elements.id.value = e.id;
@@ -1850,6 +1959,7 @@ function selectExpertInModal(id) {
   f.elements.readOnly.checked = Boolean(e.readOnly);
   f.elements.allowVisualCompanion.checked = Boolean(e.allowVisualCompanion);
   renderExpertDefaultSkillsPicker(e.defaultSkills || []);
+  syncExpertModalModelCombo();
 }
 
 // ----- Event Wiring -----
@@ -2295,6 +2405,9 @@ function readProviderFormPayload() {
   const fd = new FormData($('#form-provider'));
   const body = Object.fromEntries(fd.entries());
   if (!body.apiKey) delete body.apiKey;
+  if (state.fetchedModelsByProvider?.[body.id]?.length) {
+    body.models = state.fetchedModelsByProvider[body.id];
+  }
   return body;
 }
 
@@ -2342,8 +2455,18 @@ $('#btn-fetch-models').onclick = async () => {
       method: 'POST',
       body: JSON.stringify(body),
     });
-    $('#dl-prov-models').innerHTML = (models || []).map((m) => `<option value="${escapeHtml(m)}">`).join('');
-    $('#provider-test-result').textContent = `Loaded ${models.length} models.`;
+    const list = Array.isArray(models) ? models : [];
+    if (list.length > 0) {
+      state.fetchedModelsByProvider = state.fetchedModelsByProvider || {};
+      state.fetchedModelsByProvider[body.id] = list;
+    }
+    const existing = state.providers.find((x) => x.id === body.id);
+    if (existing && list.length > 0) {
+      existing.models = list;
+      renderProviderList();
+    }
+    syncModelCombo($('#prov-default-model-select'), $('#prov-default-model'), list, { allowInherit: false });
+    $('#provider-test-result').textContent = `Loaded ${list.length} models — open the Default Model dropdown to pick any of them.`;
   } catch (err) {
     $('#provider-test-result').textContent = `Error: ${err.message}`;
   }

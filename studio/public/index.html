@@ -7,7 +7,7 @@
   <meta name="apple-mobile-web-app-title" content="Superpowers Studio">
   <meta name="theme-color" content="#0071e3">
   <title>Superpowers Studio — Multi-Provider Agent Environment</title>
-  <link rel="stylesheet" href="/styles.css?v=4">
+  <link rel="stylesheet" href="/styles.css?v=5">
 </head>
 <body>
   <div id="toast-stack" class="toast-stack" aria-live="polite"></div>
@@ -243,17 +243,26 @@
           <fieldset>
             <legend>Subordinate (Chat &amp; Interview)</legend>
             <label>Provider <select name="providerId" id="ns-sub-provider"></select></label>
-            <label>Model <input name="model" id="ns-sub-model" list="dl-sub-models" placeholder="default model"><datalist id="dl-sub-models"></datalist></label>
+            <label>Model
+              <select id="ns-sub-model-select" class="model-combo-select"></select>
+              <input name="model" id="ns-sub-model" placeholder="Enter custom model ID">
+            </label>
           </fieldset>
           <fieldset>
             <legend>Coordinator (Autonomous Lead)</legend>
             <label>Provider (optional) <select name="coordinatorProviderId" id="ns-coord-provider"></select></label>
-            <label>Model (optional) <input name="coordinatorModel" id="ns-coord-model" list="dl-coord-models" placeholder="same as Subordinate"><datalist id="dl-coord-models"></datalist></label>
+            <label>Model (optional)
+              <select id="ns-coord-model-select" class="model-combo-select"></select>
+              <input name="coordinatorModel" id="ns-coord-model" placeholder="same as Subordinate">
+            </label>
           </fieldset>
           <fieldset>
             <legend>Default Experts / Subagents</legend>
             <label>Provider (optional) <select name="expertProviderId" id="ns-exp-provider"></select></label>
-            <label>Model (optional) <input name="expertModel" id="ns-exp-model" list="dl-exp-models" placeholder="same as Coordinator"><datalist id="dl-exp-models"></datalist></label>
+            <label>Model (optional)
+              <select id="ns-exp-model-select" class="model-combo-select"></select>
+              <input name="expertModel" id="ns-exp-model" placeholder="same as Coordinator">
+            </label>
           </fieldset>
         </div>
         <div class="session-scope-box">
@@ -298,17 +307,26 @@
           <fieldset>
             <legend>Subordinate (Chat &amp; Interview)</legend>
             <label>Provider <select name="providerId" id="ss-sub-provider"></select></label>
-            <label>Model <input name="model" id="ss-sub-model" list="dl-ss-sub-models" placeholder="default model"><datalist id="dl-ss-sub-models"></datalist></label>
+            <label>Model
+              <select id="ss-sub-model-select" class="model-combo-select"></select>
+              <input name="model" id="ss-sub-model" placeholder="Enter custom model ID">
+            </label>
           </fieldset>
           <fieldset>
             <legend>Coordinator (Autonomous Lead)</legend>
             <label>Provider (optional) <select name="coordinatorProviderId" id="ss-coord-provider"></select></label>
-            <label>Model (optional) <input name="coordinatorModel" id="ss-coord-model" list="dl-ss-coord-models" placeholder="same as Subordinate"><datalist id="dl-ss-coord-models"></datalist></label>
+            <label>Model (optional)
+              <select id="ss-coord-model-select" class="model-combo-select"></select>
+              <input name="coordinatorModel" id="ss-coord-model" placeholder="same as Subordinate">
+            </label>
           </fieldset>
           <fieldset>
             <legend>Default Experts / Subagents</legend>
             <label>Provider (optional) <select name="expertProviderId" id="ss-exp-provider"></select></label>
-            <label>Model (optional) <input name="expertModel" id="ss-exp-model" list="dl-ss-exp-models" placeholder="same as Coordinator"><datalist id="dl-ss-exp-models"></datalist></label>
+            <label>Model (optional)
+              <select id="ss-exp-model-select" class="model-combo-select"></select>
+              <input name="expertModel" id="ss-exp-model" placeholder="same as Coordinator">
+            </label>
           </fieldset>
         </div>
         <div class="form-row">
@@ -390,8 +408,8 @@
           </div>
           <div id="provider-key-status" class="muted small"></div>
           <label>Default Model
-            <input name="defaultModel" list="dl-prov-models" placeholder="model-id">
-            <datalist id="dl-prov-models"></datalist>
+            <select id="prov-default-model-select" class="model-combo-select"></select>
+            <input name="defaultModel" id="prov-default-model" placeholder="Enter custom model ID">
           </label>
           <div class="form-actions-inline">
             <button type="button" id="btn-fetch-models" class="btn btn-secondary btn-sm">Fetch Models</button>
@@ -441,7 +459,10 @@
           </label>
           <div class="form-row">
             <label>Preferred Provider (optional) <select name="providerId" id="exp-edit-provider"></select></label>
-            <label>Preferred Model (optional) <input name="model" placeholder="inherit from session"></label>
+            <label>Preferred Model (optional)
+              <select id="exp-edit-model-select" class="model-combo-select"></select>
+              <input name="model" id="exp-edit-model" placeholder="inherit from session">
+            </label>
           </div>
           <div class="checkbox-row">
             <label class="inline-check"><input type="checkbox" name="readOnly"> Read-only tools by default</label>
@@ -652,6 +673,6 @@ node studio/daemon.mjs stop</pre>
     </div>
   </div>
 
-  <script type="module" src="/app.js?v=4"></script>
+  <script type="module" src="/app.js?v=5"></script>
 </body>
 </html>
