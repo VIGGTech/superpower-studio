@@ -688,8 +688,19 @@ function renderMain({ renderTimeline = true } = {}) {
   tl.scrollTop = tl.scrollHeight;
 }
 
-async function executeQuickAction(action) {
+async function executeQuickAction(action, { fromSuggested = false } = {}) {
   if (!state.activeSessionId || !action) return;
+  const prevSuggested = fromSuggested && state.activeDetail?.session
+    ? [...(state.activeDetail.session.suggestedActions || [])]
+    : null;
+  if (fromSuggested) {
+    if (state.activeDetail?.session) state.activeDetail.session.suggestedActions = [];
+    const sugBar = $('#suggested-actions-bar');
+    if (sugBar) {
+      sugBar.classList.add('hidden');
+      sugBar.innerHTML = '';
+    }
+  }
   try {
     if (action.kind === 'approve') {
       await approveActiveSession();
@@ -734,6 +745,10 @@ async function executeQuickAction(action) {
       await sendComposerMessage();
     }
   } catch (err) {
+    if (prevSuggested && state.activeDetail?.session) {
+      state.activeDetail.session.suggestedActions = prevSuggested;
+      renderActionBars(state.activeDetail.session);
+    }
     showSessionError(err.message);
     showToast(err.message, 'error');
   }
@@ -749,7 +764,7 @@ function renderActionBars(session) {
       return `<button type="button" class="btn btn-xs ${cls}" data-sug-idx="${i}">${escapeHtml(a.label)}</button>`;
     }).join('');
     sugBar.querySelectorAll('[data-sug-idx]').forEach((btn) => {
-      btn.addEventListener('click', () => executeQuickAction(suggested[Number(btn.dataset.sugIdx)]));
+      btn.addEventListener('click', () => executeQuickAction(suggested[Number(btn.dataset.sugIdx)], { fromSuggested: true }));
     });
   } else {
     sugBar.classList.add('hidden');
@@ -2320,6 +2335,12 @@ async function sendComposerMessage() {
   state.pendingAttachments = [];
   renderPendingAttachments();
   $('#slash-menu').classList.add('hidden');
+  if (state.activeDetail?.session) state.activeDetail.session.suggestedActions = [];
+  const sugBar = $('#suggested-actions-bar');
+  if (sugBar) {
+    sugBar.classList.add('hidden');
+    sugBar.innerHTML = '';
+  }
   $('#btn-send').disabled = true;
   state.subordinateBusy = true;
   state.subordinateActivity = 'thinking…';

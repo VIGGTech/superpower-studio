@@ -1313,6 +1313,7 @@ export function createOrchestrator({
       .catch(() => {})
       .then(async () => {
         store.updateSession(sessionId, { suggestedActions: [] });
+        broadcastSession(sessionId);
         const userMsg = store.appendMessage(sessionId, {
           role: 'user',
           content: expanded,
@@ -1420,7 +1421,7 @@ export function createOrchestrator({
     if (runtime.coordinatorPromise) {
       await runtime.coordinatorPromise.catch(() => {});
     }
-    store.updateSession(sessionId, { phase: 'interview' });
+    store.updateSession(sessionId, { phase: 'interview', suggestedActions: [] });
     const msg = store.appendMessage(sessionId, {
       role: 'system',
       content: 'Re-opened Interview phase. Rules & Plan can now be edited before re-dispatching to the Coordinator.',
@@ -1435,8 +1436,10 @@ export function createOrchestrator({
     const session = store.getSession(sessionId);
     if (!session) return null;
     if (session.phase === 'running' && !runtime.coordinatorPromise) {
-      store.updateSession(sessionId, { phase: 'paused' });
+      store.updateSession(sessionId, { phase: 'paused', suggestedActions: [] });
       store.saveCoordinator(sessionId, { status: 'paused' });
+    } else if (Array.isArray(session.suggestedActions) && session.suggestedActions.length > 0) {
+      store.updateSession(sessionId, { suggestedActions: [] });
     }
     return broadcastSession(sessionId);
   }
@@ -1451,6 +1454,9 @@ export function createOrchestrator({
       if (!session) throw new Error(`Session not found: ${sessionId}`);
       if (runtime.coordinatorPromise) {
         runtime.pauseRequested = false;
+        if (Array.isArray(session.suggestedActions) && session.suggestedActions.length > 0) {
+          store.updateSession(sessionId, { suggestedActions: [] });
+        }
         return broadcastSession(sessionId);
       }
       runtime.consecutiveRecoveries = 0;
@@ -1467,6 +1473,7 @@ export function createOrchestrator({
         worktreeBranch: ws.worktreeBranch,
         maxTurns: nextMaxTurns,
         phase: 'running',
+        suggestedActions: [],
         lastError: null,
       });
       startCoordinatorBackground(sessionId);
@@ -1485,7 +1492,7 @@ export function createOrchestrator({
     }
     const session = store.getSession(sessionId);
     if (!session) return null;
-    store.updateSession(sessionId, { phase: 'stopped' });
+    store.updateSession(sessionId, { phase: 'stopped', suggestedActions: [] });
     store.saveCoordinator(sessionId, { status: 'stopped' });
     return broadcastSession(sessionId);
   }
@@ -1501,6 +1508,7 @@ export function createOrchestrator({
     if (!session) throw new Error(`Session not found: ${sessionId}`);
     const text = String(instructions || '').trim();
     if (!text) throw new Error('instructions are required');
+    store.updateSession(sessionId, { suggestedActions: [] });
     const runtime = getRuntime(sessionId);
     runtime.directiveQueue.push({
       instructions: text,

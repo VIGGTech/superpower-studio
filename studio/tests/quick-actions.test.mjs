@@ -157,9 +157,11 @@ test('offer_actions persists suggestedActions on session and direct POST /api/se
     assert.equal(coordSawRelayed, true);
 
     // Follow-up relay after all tasks are done appends a new in_progress task so ETA is positive (not 0s)
+    // and clears any stale suggestedActions
     const beforeTasks = studio.store.getSession(session.id).tasks;
     studio.store.updateSession(session.id, {
       tasks: beforeTasks.map((t) => ({ ...t, status: 'done', durationMs: 60_000 })),
+      suggestedActions: [{ label: 'Confirm S2-only', kind: 'relay', value: 'Confirm S2-only', style: 'success' }],
     });
     const followUpRes = await fetch(`${baseUrl}/api/sessions/${session.id}/relay`, {
       method: 'POST',
@@ -168,6 +170,7 @@ test('offer_actions persists suggestedActions on session and direct POST /api/se
     });
     assert.equal(followUpRes.status, 200);
     const followUpDetail = await (await fetch(`${baseUrl}/api/sessions/${session.id}`, { headers })).json();
+    assert.deepEqual(followUpDetail.session.suggestedActions, [], 'Relay must clear suggestedActions');
     assert.equal(followUpDetail.session.tasks.length, beforeTasks.length + 1);
     const added = followUpDetail.session.tasks[followUpDetail.session.tasks.length - 1];
     assert.equal(added.status, 'in_progress');
