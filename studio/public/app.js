@@ -705,8 +705,12 @@ async function executeQuickAction(action) {
       let instructions = action.value || composerText;
       if (!instructions) {
         const msgs = state.activeDetail?.messages || [];
-        const latest = [...msgs].reverse().find((m) => m.role === 'user' || m.role === 'assistant');
-        instructions = latest ? String(latest.displayText || latest.content || '').slice(0, 1200) : '';
+        const latest = [...msgs].reverse().find(
+          (m) => (m.role === 'user' || m.role === 'assistant')
+            && !m.internalNotice
+            && String(m.displayText || m.content || '').trim().length > 0
+        );
+        instructions = latest ? String(latest.displayText || latest.content || '').trim().slice(0, 1200) : '';
       }
       if (!instructions) {
         showToast('Type instructions in the composer first to relay to Coordinator.', 'warn');
