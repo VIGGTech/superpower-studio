@@ -13,6 +13,7 @@ const state = {
   streamingText: '',
   streamingReasoning: '',
   subordinateBusy: false,
+  subordinateActivity: '',
   coordLiveText: '',
   expertLiveText: {}, // { [expertId]: string }
   pendingAttachments: [], // [{ id, filename, mimeType, previewUrl }]
@@ -178,10 +179,18 @@ function handleWsEvent(ev) {
   if (ev.sessionId !== state.activeSessionId) return;
 
   if (ev.type === 'message_delta') {
+    state.subordinateActivity = 'streaming…';
     state.streamingText += ev.delta || '';
     renderStreaming();
   } else if (ev.type === 'reasoning_delta') {
+    state.subordinateActivity = 'reasoning…';
     state.streamingReasoning += ev.delta || '';
+    renderStreaming();
+  } else if (ev.type === 'tool_call') {
+    state.subordinateActivity = `running ${ev.toolCall?.name || 'tool'}…`;
+    renderStreaming();
+  } else if (ev.type === 'tool_result') {
+    state.subordinateActivity = 'thinking…';
     renderStreaming();
   } else if (ev.type === 'message_added') {
     if (ev.message?.role === 'assistant') {
@@ -249,11 +258,15 @@ setInterval(() => {
 
 function renderStreaming() {
   const box = $('#streaming-box');
-  if (!state.streamingText && !state.streamingReasoning) {
+  if (!state.subordinateBusy && !state.streamingText && !state.streamingReasoning) {
     box.classList.add('hidden');
     return;
   }
   box.classList.remove('hidden');
+  const stEl = $('#streaming-status');
+  if (stEl) {
+    stEl.textContent = state.subordinateActivity || (state.streamingText ? 'streaming…' : 'thinking…');
+  }
   const rEl = $('#streaming-reasoning');
   if (state.streamingReasoning) {
     rEl.textContent = state.streamingReasoning;
@@ -261,7 +274,7 @@ function renderStreaming() {
   } else {
     rEl.classList.add('hidden');
   }
-  $('#streaming-text').innerHTML = renderMarkdown(state.streamingText);
+  $('#streaming-text').innerHTML = state.streamingText ? renderMarkdown(state.streamingText) : '';
   const tl = $('#timeline');
   tl.scrollTop = tl.scrollHeight;
 }
@@ -2300,6 +2313,8 @@ async function sendComposerMessage() {
   $('#slash-menu').classList.add('hidden');
   $('#btn-send').disabled = true;
   state.subordinateBusy = true;
+  state.subordinateActivity = 'thinking…';
+  renderStreaming();
   renderAgentsAndMissionTab();
   try {
     await api(`/api/sessions/${state.activeSessionId}/messages`, {
@@ -2312,6 +2327,7 @@ async function sendComposerMessage() {
   } finally {
     $('#btn-send').disabled = false;
     state.subordinateBusy = false;
+    state.subordinateActivity = '';
     state.streamingText = '';
     state.streamingReasoning = '';
     renderStreaming();

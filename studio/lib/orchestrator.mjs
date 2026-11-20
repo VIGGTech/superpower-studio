@@ -6,7 +6,7 @@ import { detectDefaultShell, getToolDefinitions, createToolExecutor } from './to
 
 const DEFAULT_PROMPT_BUDGET_CHARS = 60_000;
 const DEFAULT_EXPERT_MAX_TURNS = 40;
-const MAX_SUBORDINATE_TOOL_STEPS = 8;
+const MAX_SUBORDINATE_TOOL_STEPS = 20;
 
 export function parsePlanTasks(planMarkdown = '') {
   const text = String(planMarkdown || '');
@@ -1039,6 +1039,8 @@ export function createOrchestrator({
     const shell = detectDefaultShell(settings.shell);
 
     let statusChecksInTurn = 0;
+    let respondedToUser = false;
+    let stoppedByPollingGuard = false;
     for (let step = 0; step < MAX_SUBORDINATE_TOOL_STEPS; step++) {
       const freshSession = store.getSession(sessionId);
       const { provider, model } = resolveProviderAndModel(freshSession, 'subordinate');
@@ -1190,6 +1192,7 @@ export function createOrchestrator({
       emitEvent({ type: 'message_added', sessionId, message: assistantMsg });
 
       if (!reply.toolCalls || reply.toolCalls.length === 0) {
+        respondedToUser = true;
         break;
       }
 
@@ -1212,6 +1215,7 @@ export function createOrchestrator({
         if (res.imageAttachment) subVisualAttachments.push(res.imageAttachment);
       }
       if (stopSubPolling) {
+        stoppedByPollingGuard = true;
         break;
       }
       if (subVisualAttachments.length > 0) {
@@ -1222,6 +1226,52 @@ export function createOrchestrator({
           attachments: subVisualAttachments,
         });
         emitEvent({ type: 'message_added', sessionId, message: visMsg });
+      }
+      if (step === MAX_SUBORDINATE_TOOL_STEPS - 2) {
+        const nudgeMsg = store.appendMessage(sessionId, {
+          role: 'user',
+          internalNotice: true,
+          content: '[System Notice] You have 1 tool step left in this turn. Finish any final action (propose_rules, relay_to_coordinator, or offer_actions) and reply clearly to your human partner now.',
+        });
+        emitEvent({ type: 'message_added', sessionId, message: nudgeMsg });
+      }
+    }
+
+    // Guarantee a user-facing final synthesis reply if the tool step budget was exhausted
+    if (!respondedToUser && !stoppedByPollingGuard) {
+      const freshSession = store.getSession(sessionId);
+      if (freshSession) {
+        const { provider, model } = resolveProviderAndModel(freshSession, 'subordinate');
+        const systemPrompt = buildBootstrapPrompt({
+          skillsRoot,
+          tier: 'subordinate',
+          phase: freshSession.phase,
+          rules: freshSession.rules,
+          plan: freshSession.plan,
+          pinnedSkills: freshSession.pinnedSkills,
+          enabledSkillPacks: freshSession.enabledSkillPacks,
+          shellName: shell.displayName,
+          effectiveWorkDir: freshSession.effectiveWorkDir,
+          extraContext: 'You have reached the tool-call limit for this turn. Using the information you already gathered, write your complete, helpful reply to your human partner now (do not call additional tools).',
+        });
+        const messages = store.getMessages(sessionId);
+        const finalReply = await callModelWithOverflowRetry({
+          sessionId,
+          provider,
+          model,
+          systemPrompt,
+          messages,
+          tools: [],
+          onText: (delta) => emitEvent({ type: 'message_delta', sessionId, delta }),
+          onReasoning: (delta) => emitEvent({ type: 'reasoning_delta', sessionId, delta }),
+        });
+        const finalMsg = store.appendMessage(sessionId, {
+          role: 'assistant',
+          content: finalReply.content || 'I finished inspecting the files above — let me know how you would like to proceed.',
+          reasoning: finalReply.reasoning || '',
+          toolCalls: [],
+        });
+        emitEvent({ type: 'message_added', sessionId, message: finalMsg });
       }
     }
     return broadcastSession(sessionId);

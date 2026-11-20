@@ -129,7 +129,7 @@
         <!-- Subordinate Chat Timeline -->
         <div id="timeline" class="timeline"></div>
         <div id="streaming-box" class="streaming-box hidden">
-          <div class="msg-header"><span class="tier-tag">Subordinate</span> <span class="muted">streaming…</span></div>
+          <div class="msg-header"><span class="status-dot running"></span> <span class="tier-tag">Subordinate</span> <span id="streaming-status" class="muted">thinking…</span></div>
           <div id="streaming-reasoning" class="reasoning-live hidden"></div>
           <div id="streaming-text" class="msg-body"></div>
         </div>
@@ -673,6 +673,6 @@ node studio/daemon.mjs stop</pre>
     </div>
   </div>
 
-  <script type="module" src="/app.js?v=6"></script>
+  <script type="module" src="/app.js?v=7"></script>
 </body>
 </html>

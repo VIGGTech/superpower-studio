@@ -199,6 +199,53 @@ test('Subordinate anti-polling guard prevents repeated get_coordinator_status lo
   }
 });
 
+test('Subordinate always delivers a final user-facing synthesis reply if tool-step budget is exhausted', async () => {
+  const base = makeTempDir('sp-subcap-');
+  const dataDir = path.join(base, 'data');
+  const workDir = path.join(base, 'work');
+  fs.mkdirSync(workDir, { recursive: true });
+  fs.writeFileSync(path.join(workDir, 'notes.txt'), 'hello world\n', 'utf8');
+  try {
+    const store = createStore({ dataDir });
+    store.upsertProvider({
+      id: 'abliteration',
+      name: 'Abliteration.ai',
+      kind: 'openai-compatible',
+      baseUrl: 'https://api.abliteration.ai/v1',
+      apiKey: 'ak_mock',
+      defaultModel: 'm',
+    });
+    const session = store.createSession({ title: 'DeepInspect', workspacePath: workDir, providerId: 'abliteration', model: 'm' });
+
+    let finalToolFreeCalled = false;
+    const orch = createOrchestrator({
+      store,
+      skillsRoot: SKILLS_ROOT,
+      streamChatImpl: async ({ tools }) => {
+        if (!tools || tools.length === 0) {
+          finalToolFreeCalled = true;
+          return { content: 'Here is the complete plan based on all inspected files.', reasoning: '', toolCalls: [] };
+        }
+        return {
+          content: '',
+          reasoning: '',
+          toolCalls: [{ id: `ls_${Math.random().toString(36).slice(2, 7)}`, name: 'list_files', arguments: {} }],
+        };
+      },
+      emitEvent: () => {},
+    });
+
+    await orch.sendUserMessage(session.id, 'Inspect everything and write the plan');
+    assert.equal(finalToolFreeCalled, true, 'Expected guaranteed tool-free synthesis turn after exhausting tool budget');
+    const msgs = store.getMessages(session.id);
+    const last = msgs[msgs.length - 1];
+    assert.equal(last.role, 'assistant');
+    assert.match(last.content, /complete plan/i);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
 test('Frontend app.js initializes top-level event wiring cleanly without ReferenceError / TDZ crashes', () => {
   const appJsPath = path.resolve(__dirname, '..', 'public', 'app.js');
   const code = fs.readFileSync(appJsPath, 'utf8');
