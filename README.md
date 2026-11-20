@@ -6,7 +6,7 @@
 
 ## How Superpowers Studio Works
 
-Superpowers Studio runs a **3-tier autonomous agent hierarchy** on top of all **15 live Superpowers skills** (`skills/*/SKILL.md`):
+Superpowers Studio runs a **3-tier autonomous agent hierarchy** on top of **23 live skills** across two modular packs (**15 Superpowers Core workflow skills** in `skills/` + **8 Engineering Pack skills** in `studio/skills/` with self-contained checklists):
 
 ```text
 You (Desktop Browser or Mobile Phone via LAN / Tailscale QR)
@@ -25,9 +25,10 @@ Tier 2 · Coordinator Agent (Autonomous Execution Lead)
   • Isolates parallel sessions automatically with git worktrees
   │
   ▼  Parallel spawn_expert()
-Tier 3 · Specialist Experts (8 Pre-Seeded + Custom Roster)
-  • Software Implementer · Code Reviewer · Systematic Debugger · Researcher
-  • Senior DICOM Engineer · HL7/FHIR Engineer · Anatomical Illustrator · Human Physiology Expert
+Tier 3 · Specialist Experts (12 Pre-Seeded + Custom Roster)
+  • Engineering: Software Implementer · Code Reviewer · Systematic Debugger · Technical Researcher
+  • Quality & Security: Security Auditor · Web Performance Auditor · Accessibility Auditor · QA & Test Engineer
+  • Medical & Imaging: Senior DICOM Engineer · HL7/FHIR Engineer · Anatomical Illustrator · Human Physiology Expert
   • Every Expert inherits your locked Session Rules and can visually inspect PNG/SVG outputs
 ```
 
@@ -52,7 +53,7 @@ node studio/daemon.mjs open   # starts detached background daemon & opens browse
 
 ### 3. Run a Session (Interview → Dispatch → Autonomous Execution)
 1. Click **+ New Session**, choose a workspace folder (created automatically if missing), and pick your **Subordinate**, **Coordinator**, and **Expert** models (editable live anytime via **Settings**).
-2. Chat with the **Subordinate** — paste reference screenshots (`Ctrl+V` / `+ Image`), type `/skill-name` to invoke any of the 15 Superpowers skills, or click the **Quick Actions** buttons above the composer.
+2. Chat with the **Subordinate** — paste reference screenshots (`Ctrl+V` / `+ Image`), type `/skill-name` to invoke any of the 23 live skills (filterable by pack in the **Skills** tab with built-in checklist viewer), or click the **Quick Actions** buttons above the composer.
 3. Click **Approve & Dispatch** to lock your rules and launch the **Coordinator** and parallel **Experts**.
 4. Monitor & steer live:
    - **Agents tab:** Watch active agents pinned at the top while completed Experts & `Done Tasks` auto-collapse into expandable drawers.
@@ -69,7 +70,9 @@ Open **Background & Service** (bottom-left sidebar) to:
 For full CLI commands, security architecture, and `.msi` build instructions, see **[studio/README.md](studio/README.md)**.
 
 ### Open-Source License & Upstream Attribution
-Released under the **MIT License** ([LICENSE](LICENSE) · [NOTICE.txt](NOTICE.txt)). All 15 upstream skills in `skills/` remain intact and attributed to **[Jesse Vincent / obra/superpowers](https://github.com/obra/superpowers)** (`v7.0.2`).
+Released under the **MIT License** ([LICENSE](LICENSE) · [NOTICE.txt](NOTICE.txt)).
+- All 15 upstream workflow skills in `skills/` remain intact and attributed to **[Jesse Vincent / obra/superpowers](https://github.com/obra/superpowers)** (`v7.0.2`).
+- The 8 curated Engineering Pack skills (`studio/skills/`) and 4 Quality & Security auditor personas are adapted from **[Addy Osmani / addyosmani/agent-skills](https://github.com/addyosmani/agent-skills)** (MIT License).
 
 ---
 

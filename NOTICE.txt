@@ -8,3 +8,10 @@ Derived from obra/superpowers v7.0.2
 Repository: https://github.com/obra/superpowers
 Original Author: Copyright (c) 2025 Jesse Vincent
 Original License: MIT License (included in LICENSE)
+
+Additional Third-Party Open-Source Attribution:
+Engineering Pack skills (studio/skills/) and Quality & Security auditor personas
+Adapted from addyosmani/agent-skills
+Repository: https://github.com/addyosmani/agent-skills
+Original Author: Copyright (c) 2025 Addy Osmani
+Original License: MIT License (included in LICENSE)
