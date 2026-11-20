@@ -71,7 +71,7 @@ export function computeMissionEta(tasks = []) {
     etaBasis = 'complete';
   } else if (durationsSec.length > 0) {
     const avgSec = durationsSec.reduce((a, b) => a + b, 0) / durationsSec.length;
-    etaSeconds = Math.round(avgSec * remaining.length);
+    etaSeconds = Math.max(1, Math.round(avgSec * remaining.length));
     etaBasis = 'rolling-average';
   } else {
     const estValues = remaining
@@ -79,9 +79,9 @@ export function computeMissionEta(tasks = []) {
       .filter((v) => v !== null);
     if (estValues.length > 0) {
       const avgEst = estValues.reduce((a, b) => a + b, 0) / estValues.length;
-      etaSeconds = Math.round(
+      etaSeconds = Math.max(1, Math.round(
         remaining.reduce((sum, t) => sum + (t.estimateSec > 0 ? t.estimateSec : avgEst), 0)
-      );
+      ));
       etaBasis = 'coordinator-estimate';
     }
   }
@@ -365,6 +365,31 @@ export function createOrchestrator({
       }
       throw err;
     }
+  }
+
+  function appendFollowUpTaskIfAllDone(sessionId, instructions) {
+    const session = store.getSession(sessionId);
+    if (!session) return;
+    const tasks = Array.isArray(session.tasks) ? session.tasks.map((t) => ({ ...t })) : [];
+    if (tasks.length === 0 || !tasks.every((t) => t.status === 'done')) return;
+    const firstLine = String(instructions || '')
+      .split(/\r?\n/)
+      .map((l) => l.replace(/^[#>*\-\d.\s]+/, '').replace(/[*_`]+/g, '').trim())
+      .find((l) => l.length > 2) || 'Follow-up directive';
+    const title = `Follow-up: ${firstLine.slice(0, 80)}${firstLine.length > 80 ? '…' : ''}`;
+    tasks.push({
+      id: `task-${tasks.length + 1}`,
+      title,
+      status: 'in_progress',
+      assignedAgent: 'Coordinator',
+      assignedModel: null,
+      startedAt: new Date().toISOString(),
+      completedAt: null,
+      durationMs: null,
+      estimateSec: null,
+      note: '',
+    });
+    store.updateSession(sessionId, { tasks });
   }
 
   function updateTaskProgress(sessionId, patch = {}) {
@@ -1105,6 +1130,7 @@ export function createOrchestrator({
               priority: priority || 'normal',
               timestamp: new Date().toISOString(),
             });
+            appendFollowUpTaskIfAllDone(sessionId, instructions);
             const coord = store.getCoordinator(sessionId);
             if (coord.status !== 'running') {
               const s = store.getSession(sessionId);
@@ -1481,6 +1507,7 @@ export function createOrchestrator({
       priority: priority || 'normal',
       timestamp: new Date().toISOString(),
     });
+    appendFollowUpTaskIfAllDone(sessionId, text);
 
     const sysMsg = store.appendMessage(sessionId, {
       role: 'system',

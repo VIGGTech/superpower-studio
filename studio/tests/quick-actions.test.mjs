@@ -43,6 +43,8 @@ test('offer_actions persists suggestedActions on session and direct POST /api/se
 
   let releaseCoord;
   const gate = new Promise((r) => { releaseCoord = r; });
+  let releaseFollowUp;
+  const followUpGate = new Promise((r) => { releaseFollowUp = r; });
   let coordSawRelayed = false;
   let coordTurn = 0;
 
@@ -80,6 +82,17 @@ test('offer_actions persists suggestedActions on session and direct POST /api/se
         }
         if (messages.some((m) => String(m.content || '').includes('Use high-contrast color palette'))) {
           coordSawRelayed = true;
+        }
+        if (coordTurn >= 3) {
+          await followUpGate;
+          return {
+            content: 'Follow-up done',
+            reasoning: '',
+            toolCalls: [
+              { id: 'tc_p2', name: 'update_task_progress', arguments: { taskId: 'task-2', status: 'done' } },
+              { id: 'tc_fin2', name: 'report_complete', arguments: { summary: 'Follow-up done', verification: 'OK' } },
+            ],
+          };
         }
         return {
           content: 'Done',
@@ -142,6 +155,26 @@ test('offer_actions persists suggestedActions on session and direct POST /api/se
       await new Promise((r) => setTimeout(r, 20));
     }
     assert.equal(coordSawRelayed, true);
+
+    // Follow-up relay after all tasks are done appends a new in_progress task so ETA is positive (not 0s)
+    const beforeTasks = studio.store.getSession(session.id).tasks;
+    studio.store.updateSession(session.id, {
+      tasks: beforeTasks.map((t) => ({ ...t, status: 'done', durationMs: 60_000 })),
+    });
+    const followUpRes = await fetch(`${baseUrl}/api/sessions/${session.id}/relay`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ instructions: 'Refine SVG proportions using clinical reference', priority: 'normal' }),
+    });
+    assert.equal(followUpRes.status, 200);
+    const followUpDetail = await (await fetch(`${baseUrl}/api/sessions/${session.id}`, { headers })).json();
+    assert.equal(followUpDetail.session.tasks.length, beforeTasks.length + 1);
+    const added = followUpDetail.session.tasks[followUpDetail.session.tasks.length - 1];
+    assert.equal(added.status, 'in_progress');
+    assert.match(added.title, /Follow-up: Refine SVG proportions/i);
+    assert.ok(followUpDetail.session.missionSummary.etaSeconds > 0, 'Follow-up ETA should be > 0s');
+    releaseFollowUp();
+    await fetch(`${baseUrl}/api/sessions/${session.id}/stop`, { method: 'POST', headers });
   } finally {
     await studio.close();
     fs.rmSync(base, { recursive: true, force: true });

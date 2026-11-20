@@ -349,7 +349,9 @@ function renderSessionList() {
     const ms = s.missionSummary || {};
     const pct = ms.totalCount > 0 ? Math.round((ms.doneCount / ms.totalCount) * 100) : 0;
     const taskTxt = ms.totalCount > 0 ? `<span>${ms.doneCount}/${ms.totalCount} tasks</span>` : '';
-    const etaTxt = s.phase === 'running' && ms.etaSeconds != null ? `<span>ETA ~${formatDuration(ms.etaSeconds)}</span>` : '';
+    const etaTxt = s.phase === 'running' && ms.etaSeconds != null
+      ? (ms.etaSeconds > 0 ? `<span>ETA ~${formatDuration(ms.etaSeconds)}</span>` : '<span>wrapping up…</span>')
+      : '';
     const expTxt = s.activeExperts > 0 ? `<span>${s.activeExperts} active</span>` : (s.totalExperts ? `<span>${s.totalExperts} exp</span>` : '');
     return `
       <div class="session-item ${active}" data-sid="${escapeHtml(s.id)}">
@@ -611,11 +613,14 @@ function renderMain({ renderTimeline = true } = {}) {
   if (session.phase === 'completed') {
     etaEl.textContent = 'ETA: Done';
     etaEl.title = 'Mission completed';
-  } else if (ms.etaSeconds != null) {
+  } else if (ms.etaSeconds != null && ms.etaSeconds > 0) {
     etaEl.textContent = `Potential ETA: ~${formatDuration(ms.etaSeconds)}`;
     etaEl.title = ms.etaBasis === 'rolling-average'
       ? 'Estimated from average duration of completed tasks × remaining tasks'
       : 'Estimated from Coordinator per-task time estimates';
+  } else if (isRunning && ms.etaBasis === 'complete') {
+    etaEl.textContent = 'ETA: Wrapping up…';
+    etaEl.title = 'All tracked tasks are done — Coordinator is finishing follow-up work';
   } else if (isRunning) {
     etaEl.textContent = 'ETA: Estimating…';
     etaEl.title = 'ETA updates automatically once Task 1 completes or Coordinator supplies estimates';
