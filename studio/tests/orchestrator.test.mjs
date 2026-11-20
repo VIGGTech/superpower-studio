@@ -7,8 +7,10 @@ import { fileURLToPath } from 'node:url';
 
 import { createStore } from '../lib/store.mjs';
 import { createOrchestrator, buildPromptWindow } from '../lib/orchestrator.mjs';
+import { getDefaultSkillRoots } from '../lib/skills.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = path.resolve(__dirname, '..', '..');
 const SKILLS_ROOT = path.resolve(__dirname, '..', '..', 'skills');
 
 function makeTempDir(prefix = 'sp-orch-') {
@@ -282,6 +284,99 @@ test('Coordinator handles escalation, text-only nudges (3rd pauses), and context
     await orch2.approveAndRun(s2.id, { rules: '- R', plan: 'P', allowSharedNonGit: true });
     await waitFor(() => store.getSession(s2.id).phase === 'paused' && subSawEscalation, 5000);
     assert.equal(subSawEscalation, true);
+  } finally {
+    fs.rmSync(workDir, { recursive: true, force: true });
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  }
+});
+
+test('per-session enabledExpertIds & enabledSkillPacks scope Coordinator roster, block disabled experts, and auto-load expert defaultSkills', async () => {
+  const dataDir = makeTempDir('sp-scope-data-');
+  const workDir = makeTempDir('sp-scope-work-');
+  try {
+    const store = createStore({ dataDir });
+    store.upsertProvider({
+      id: 'abliteration',
+      name: 'Abliteration.ai',
+      kind: 'openai-compatible',
+      baseUrl: 'https://api.abliteration.ai/v1',
+      apiKey: 'ak_mock',
+      defaultModel: 'm1',
+    });
+
+    const session = store.createSession({
+      title: 'Web Security Session',
+      workspacePath: workDir,
+      providerId: 'abliteration',
+      model: 'm1',
+      enabledExpertIds: ['implementer', 'security-auditor'],
+      enabledSkillPacks: ['superpowers'], // engineering pack disabled at session level
+    });
+
+    assert.deepEqual(session.enabledExpertIds, ['implementer', 'security-auditor']);
+    assert.deepEqual(session.enabledSkillPacks, ['superpowers']);
+
+    let coordPrompt = '';
+    let secExpertPrompt = '';
+    let blockedToolMsg = '';
+    let coordTurn = 0;
+
+    const orch = createOrchestrator({
+      store,
+      skillsRoot: getDefaultSkillRoots(REPO_ROOT),
+      streamChatImpl: async ({ systemPrompt, messages }) => {
+        if (systemPrompt.includes('Role: Coordinator')) {
+          coordPrompt = systemPrompt;
+          coordTurn++;
+          if (coordTurn === 1) {
+            // Try spawning both a disabled expert (senior-dicom-engineer) and an enabled one (security-auditor)
+            return {
+              content: 'Testing roster scoping',
+              reasoning: '',
+              toolCalls: [
+                { id: 'tc_blocked', name: 'spawn_expert', arguments: { expertId: 'senior-dicom-engineer', task: 'Should be blocked' } },
+                { id: 'tc_allowed', name: 'spawn_expert', arguments: { expertId: 'security-auditor', task: 'Audit auth flow' } },
+              ],
+            };
+          }
+          const toolMsgs = messages.filter((m) => m.role === 'tool').map((m) => String(m.content || ''));
+          blockedToolMsg = toolMsgs.find((t) => t.includes('Expert spawn blocked')) || '';
+          return {
+            content: 'Finishing up',
+            reasoning: '',
+            toolCalls: [
+              { id: 'tc_done', name: 'update_task_progress', arguments: { taskId: 'task-1', status: 'done' } },
+              { id: 'tc_rep', name: 'report_complete', arguments: { summary: 'Audit complete', verification: 'Checked' } },
+            ],
+          };
+        }
+        if (systemPrompt.includes('Role: Security Auditor')) {
+          secExpertPrompt = systemPrompt;
+          return { content: 'Security audit complete: 0 critical issues.', reasoning: '', toolCalls: [] };
+        }
+        return { content: 'Subordinate ack', reasoning: '', toolCalls: [] };
+      },
+      emitEvent: () => {},
+    });
+
+    await orch.approveAndRun(session.id, { rules: '- Stay focused', plan: '### Task 1: Run security audit' });
+    await waitFor(() => store.getSession(session.id).phase === 'completed', 6000);
+
+    // 1. Coordinator prompt only lists enabled experts and omits disabled medical experts
+    assert.match(coordPrompt, /security-auditor/);
+    assert.match(coordPrompt, /implementer/);
+    assert.doesNotMatch(coordPrompt, /senior-dicom-engineer/);
+    assert.doesNotMatch(coordPrompt, /anatomical-illustrator/);
+
+    // 2. Session disabled engineering pack in global catalog, keeping superpowers core
+    assert.doesNotMatch(coordPrompt, /Engineering Pack \(8/);
+
+    // 3. Attempting to spawn a disabled expert was blocked cleanly
+    assert.match(blockedToolMsg, /Expert spawn blocked.*senior-dicom-engineer/i);
+
+    // 4. Spawned Security Auditor auto-loaded its defaultSkill (security-and-hardening)
+    assert.match(secExpertPrompt, /# Active Skill: security-and-hardening/);
+    assert.match(secExpertPrompt, /STRIDE/);
   } finally {
     fs.rmSync(workDir, { recursive: true, force: true });
     fs.rmSync(dataDir, { recursive: true, force: true });

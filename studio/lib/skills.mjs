@@ -189,13 +189,20 @@ export function buildBootstrapPrompt({
   rules = '',
   plan = '',
   pinnedSkills = [],
+  enabledSkillPacks = null,
   shellName = 'shell',
   effectiveWorkDir = '',
   expertRoster = [],
   expertProfile = null,
   extraContext = '',
 }) {
-  const catalog = loadSkillCatalog(skillsRoot);
+  const fullCatalog = loadSkillCatalog(skillsRoot);
+  const allowedPacks = Array.isArray(enabledSkillPacks)
+    ? new Set(['superpowers', ...enabledSkillPacks])
+    : null;
+  const catalog = allowedPacks
+    ? fullCatalog.filter((s) => allowedPacks.has(s.pack))
+    : fullCatalog;
   const usingSp = readSkill(skillsRoot, 'using-superpowers');
 
   const sections = [];
@@ -250,7 +257,7 @@ Workspace: \`${effectiveWorkDir}\` | Shell: \`${shellName}\`
   }
 
   if (catalog.length > 0) {
-    const packs = listSkillPacks(skillsRoot);
+    const packs = listSkillPacks(skillsRoot).filter((p) => !allowedPacks || allowedPacks.has(p.id));
     if (packs.length > 1) {
       const grouped = packs.map((p) => {
         const items = catalog
@@ -271,9 +278,16 @@ Workspace: \`${effectiveWorkDir}\` | Shell: \`${shellName}\`
   }
 
   if (tier === 'coordinator' && expertRoster && expertRoster.length > 0) {
-    const rosterLines = expertRoster.map(
-      (e) => `- \`${e.id}\` (**${e.name}**): ${e.specialty}${e.readOnly ? ' [read-only default]' : ''}${e.allowVisualCompanion ? ' [visual companion]' : ''}`
-    );
+    const rosterLines = expertRoster.map((e) => {
+      const tags = [
+        e.readOnly ? 'read-only default' : '',
+        e.allowVisualCompanion ? 'visual companion' : '',
+        Array.isArray(e.defaultSkills) && e.defaultSkills.length > 0
+          ? `default skills: ${e.defaultSkills.join(', ')}`
+          : '',
+      ].filter(Boolean);
+      return `- \`${e.id}\` (**${e.name}**): ${e.specialty}${tags.length ? ` [${tags.join(' | ')}]` : ''}`;
+    });
     sections.push(
       `# Available Expert Roster (pass \`expertId\` to \`spawn_expert\`)\n${rosterLines.join('\n')}`
     );

@@ -128,6 +128,18 @@ test('multi-pack skill roots load 15 Superpowers Core + 8 Engineering Pack skill
   assert.match(prompt, /Engineering Pack \(8/);
   assert.match(prompt, /security-and-hardening/);
   assert.match(prompt, /doubt-driven-development/);
+
+  // Per-session skill pack filtering keeps Superpowers Core as router and omits disabled packs
+  const coreOnlyPrompt = buildBootstrapPrompt({
+    skillsRoot: roots,
+    tier: 'coordinator',
+    phase: 'running',
+    enabledSkillPacks: ['superpowers'],
+    effectiveWorkDir: '/repo',
+  });
+  assert.match(coreOnlyPrompt, /brainstorming/);
+  assert.doesNotMatch(coreOnlyPrompt, /Engineering Pack \(8/);
+  assert.doesNotMatch(coreOnlyPrompt, /\*\*security-and-hardening\*\*/);
 });
 
 test('buildBootstrapPrompt adapts by tier, includes all 15 skills, pins rules/plan & pinned skills', () => {

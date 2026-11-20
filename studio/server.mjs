@@ -740,6 +740,7 @@ export async function createStudioServer({
             'coordinatorProviderId', 'coordinatorModel',
             'expertProviderId', 'expertModel',
             'rules', 'plan', 'maxTurns', 'uninterruptedMode',
+            'enabledExpertIds', 'enabledSkillPacks',
           ]) {
             if (body[k] !== undefined) allowed[k] = body[k];
           }

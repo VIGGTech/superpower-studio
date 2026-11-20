@@ -7,7 +7,7 @@
   <meta name="apple-mobile-web-app-title" content="Superpowers Studio">
   <meta name="theme-color" content="#0071e3">
   <title>Superpowers Studio — Multi-Provider Agent Environment</title>
-  <link rel="stylesheet" href="/styles.css?v=2">
+  <link rel="stylesheet" href="/styles.css?v=3">
 </head>
 <body>
   <div id="toast-stack" class="toast-stack" aria-live="polite"></div>
@@ -256,6 +256,22 @@
             <label>Model (optional) <input name="expertModel" id="ns-exp-model" list="dl-exp-models" placeholder="same as Coordinator"><datalist id="dl-exp-models"></datalist></label>
           </fieldset>
         </div>
+        <div class="session-scope-box">
+          <div class="session-scope-header">
+            <strong>Skill Packs for This Session</strong>
+          </div>
+          <div id="ns-skill-packs" class="scope-chip-row"></div>
+          <div class="session-scope-header" style="margin-top:8px">
+            <strong>Active Experts for This Session</strong>
+            <div class="preset-btn-group" id="ns-expert-presets">
+              <button type="button" class="btn btn-xs btn-ghost" data-preset="all">All</button>
+              <button type="button" class="btn btn-xs btn-ghost" data-preset="software">Software &amp; Web</button>
+              <button type="button" class="btn btn-xs btn-ghost" data-preset="medical">Medical &amp; Imaging</button>
+              <button type="button" class="btn btn-xs btn-ghost" data-preset="none">None</button>
+            </div>
+          </div>
+          <div id="ns-expert-picker" class="expert-picker-grid"></div>
+        </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-ghost modal-close" data-close="modal-new-session">Cancel</button>
           <button type="submit" class="btn btn-primary">Create Session</button>
@@ -302,6 +318,22 @@
           <label>Max Turns (when Auto-Continue is OFF)
             <input type="number" name="maxTurns" id="ss-max-turns" min="1" max="10000" value="100">
           </label>
+        </div>
+        <div class="session-scope-box">
+          <div class="session-scope-header">
+            <strong>Skill Packs for This Session</strong>
+          </div>
+          <div id="ss-skill-packs" class="scope-chip-row"></div>
+          <div class="session-scope-header" style="margin-top:8px">
+            <strong>Active Experts for This Session</strong>
+            <div class="preset-btn-group" id="ss-expert-presets">
+              <button type="button" class="btn btn-xs btn-ghost" data-preset="all">All</button>
+              <button type="button" class="btn btn-xs btn-ghost" data-preset="software">Software &amp; Web</button>
+              <button type="button" class="btn btn-xs btn-ghost" data-preset="medical">Medical &amp; Imaging</button>
+              <button type="button" class="btn btn-xs btn-ghost" data-preset="none">None</button>
+            </div>
+          </div>
+          <div id="ss-expert-picker" class="expert-picker-grid"></div>
         </div>
         <div class="small muted">Changes apply immediately on the very next Subordinate, Coordinator, or Expert turn.</div>
         <div class="modal-footer">
@@ -386,6 +418,14 @@
       <div class="modal-split">
         <div class="modal-list-col">
           <button id="btn-add-expert" class="btn btn-primary btn-sm btn-full">+ Add Custom Expert</button>
+          <div id="experts-session-bar" class="experts-session-bar hidden">
+            <div class="small" id="experts-session-label">Active in current session</div>
+            <div class="preset-btn-group" id="roster-session-presets">
+              <button type="button" class="btn btn-xs btn-ghost" data-preset="all">All</button>
+              <button type="button" class="btn btn-xs btn-ghost" data-preset="software">Web</button>
+              <button type="button" class="btn btn-xs btn-ghost" data-preset="medical">Medical</button>
+            </div>
+          </div>
           <div id="expert-roster-list" class="modal-list"></div>
         </div>
         <form id="form-expert" class="modal-form-col">
@@ -396,7 +436,7 @@
           <label>Category <input name="category" placeholder="Medical & Imaging"></label>
           <label>Specialty Summary <input name="specialty" placeholder="Short summary shown to Coordinator"></label>
           <label>Expert Persona &amp; Guidelines (System Prompt)
-            <textarea name="systemPrompt" rows="7"></textarea>
+            <textarea name="systemPrompt" rows="6"></textarea>
           </label>
           <div class="form-row">
             <label>Preferred Provider (optional) <select name="providerId" id="exp-edit-provider"></select></label>
@@ -405,6 +445,12 @@
           <div class="checkbox-row">
             <label class="inline-check"><input type="checkbox" name="readOnly"> Read-only tools by default</label>
             <label class="inline-check"><input type="checkbox" name="allowVisualCompanion"> Allow Visual Companion (<code>push_visual_screen</code>)</label>
+          </div>
+          <div class="session-scope-box">
+            <div class="session-scope-header">
+              <strong>Default Skills (auto-loaded when this expert spawns)</strong>
+            </div>
+            <div id="exp-default-skills" class="skill-chip-picker"></div>
           </div>
           <div class="modal-footer">
             <button type="button" id="btn-delete-expert" class="btn btn-danger btn-sm">Delete</button>
@@ -602,6 +648,6 @@ node studio/daemon.mjs stop</pre>
     </div>
   </div>
 
-  <script type="module" src="/app.js"></script>
+  <script type="module" src="/app.js?v=3"></script>
 </body>
 </html>

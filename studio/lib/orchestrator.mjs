@@ -443,6 +443,13 @@ export function createOrchestrator({
     return session;
   }
 
+  function getSessionActiveExperts(session) {
+    const all = store.getExpertRoster();
+    if (!Array.isArray(session?.enabledExpertIds)) return all;
+    const allowed = new Set(session.enabledExpertIds);
+    return all.filter((e) => allowed.has(e.id));
+  }
+
   async function runExpert({
     sessionId,
     args,
@@ -451,6 +458,10 @@ export function createOrchestrator({
   }) {
     const session = store.getSession(sessionId);
     const runtime = getRuntime(sessionId);
+    if (args.expertId && Array.isArray(session?.enabledExpertIds) && !session.enabledExpertIds.includes(args.expertId)) {
+      const enabledIds = getSessionActiveExperts(session).map((e) => e.id);
+      return `[Expert spawn blocked] Expert "${args.expertId}" is disabled for this session. Enabled experts: ${enabledIds.join(', ') || '(none — handle directly or omit expertId)'}.`;
+    }
     const profile = args.expertId ? store.getExpertProfile(args.expertId) : null;
     const expertId = `exp_${Date.now().toString(36)}_${crypto.randomBytes(3).toString('hex')}`;
     const role = args.role || profile?.name || 'Specialist Expert';
@@ -511,13 +522,20 @@ export function createOrchestrator({
 
     const settings = store.getSettings();
     const shell = detectDefaultShell(settings.shell);
+    const expertPinnedSkills = [
+      ...new Set([
+        ...(Array.isArray(session.pinnedSkills) ? session.pinnedSkills : []),
+        ...(Array.isArray(profile?.defaultSkills) ? profile.defaultSkills : []),
+      ]),
+    ];
     const systemPrompt = buildBootstrapPrompt({
       skillsRoot,
       tier: 'expert',
       phase: 'running',
       rules: session.rules,
       plan: session.plan,
-      pinnedSkills: session.pinnedSkills,
+      pinnedSkills: expertPinnedSkills,
+      enabledSkillPacks: session.enabledSkillPacks,
       shellName: shell.displayName,
       effectiveWorkDir: session.effectiveWorkDir,
       expertProfile: profile || { name: role, systemPrompt: specialty ? `Specialty: ${specialty}` : '' },
@@ -732,9 +750,10 @@ export function createOrchestrator({
           rules: session.rules,
           plan: session.plan,
           pinnedSkills: session.pinnedSkills,
+          enabledSkillPacks: session.enabledSkillPacks,
           shellName: shell.displayName,
           effectiveWorkDir: session.effectiveWorkDir,
-          expertRoster: store.getExpertRoster(),
+          expertRoster: getSessionActiveExperts(session),
         });
 
         const tools = getToolDefinitions({ tier: 'coordinator', phase: 'running' });
@@ -1030,6 +1049,7 @@ export function createOrchestrator({
         rules: freshSession.rules,
         plan: freshSession.plan,
         pinnedSkills: freshSession.pinnedSkills,
+        enabledSkillPacks: freshSession.enabledSkillPacks,
         shellName: shell.displayName,
         effectiveWorkDir: freshSession.effectiveWorkDir,
       });

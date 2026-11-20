@@ -524,6 +524,7 @@ async function loadSessionDetail(id, { timeline = true } = {}) {
 }
 
 function renderMain({ renderTimeline = true } = {}) {
+  updateExpertsButtonLabel();
   if (!state.activeDetail) {
     $('#empty-state').classList.remove('hidden');
     $('#session-view').classList.add('hidden');
@@ -1232,9 +1233,14 @@ function renderSkillsTab() {
   const filtersEl = $('#skill-pack-filters');
   if (filtersEl) {
     if (state.skillPacks.length > 1) {
+      const activePacks = state.activeDetail?.session?.enabledSkillPacks;
+      const enabledPackSet = Array.isArray(activePacks) ? new Set(['superpowers', ...activePacks]) : null;
       const pills = [
         { id: 'all', label: `All (${state.skills.length})` },
-        ...state.skillPacks.map((p) => ({ id: p.id, label: `${p.label} (${p.count})` })),
+        ...state.skillPacks.map((p) => {
+          const isOff = enabledPackSet && !enabledPackSet.has(p.id);
+          return { id: p.id, label: `${p.label} (${p.count})${isOff ? ' · off' : ''}` };
+        }),
       ];
       filtersEl.innerHTML = pills.map((p) => `
         <button type="button" class="btn btn-xs ${state.selectedSkillPack === p.id ? 'btn-primary' : 'btn-ghost'} btn-skill-pack" data-pack="${escapeHtml(p.id)}">${escapeHtml(p.label)}</button>
@@ -1364,6 +1370,140 @@ function bindProviderModelDatalist(selectEl, inputEl, datalistEl) {
   sync(false);
 }
 
+// ----- Per-Session Experts & Skill Packs Helpers -----
+
+function computeExpertPresetIds(preset) {
+  if (preset === 'none') return [];
+  if (preset === 'software') {
+    return state.expertsRoster
+      .filter((e) => (e.category || '').toLowerCase() !== 'medical & imaging')
+      .map((e) => e.id);
+  }
+  if (preset === 'medical') {
+    return state.expertsRoster
+      .filter((e) => ['medical & imaging', 'engineering'].includes((e.category || '').toLowerCase()))
+      .map((e) => e.id);
+  }
+  return state.expertsRoster.map((e) => e.id);
+}
+
+function getSessionEnabledExpertSet(session) {
+  if (!session || !Array.isArray(session.enabledExpertIds)) {
+    return new Set(state.expertsRoster.map((e) => e.id));
+  }
+  return new Set(session.enabledExpertIds);
+}
+
+function getSessionEnabledPackSet(session) {
+  if (!session || !Array.isArray(session.enabledSkillPacks)) {
+    return new Set(state.skillPacks.map((p) => p.id));
+  }
+  return new Set(['superpowers', ...session.enabledSkillPacks]);
+}
+
+function updateExpertsButtonLabel() {
+  const btn = $('#btn-experts');
+  if (!btn) return;
+  const total = state.expertsRoster.length;
+  const session = state.activeDetail?.session;
+  if (session && Array.isArray(session.enabledExpertIds)) {
+    const activeCount = state.expertsRoster.filter((e) => session.enabledExpertIds.includes(e.id)).length;
+    btn.textContent = `Expert Roster (${activeCount}/${total})`;
+  } else {
+    btn.textContent = `Expert Roster (${total})`;
+  }
+}
+
+function renderSkillPackPicker(containerEl, enabledPacks) {
+  if (!containerEl) return;
+  const activeSet = Array.isArray(enabledPacks)
+    ? new Set(['superpowers', ...enabledPacks])
+    : new Set(state.skillPacks.map((p) => p.id));
+  containerEl.innerHTML = state.skillPacks.map((p) => {
+    const isCore = p.id === 'superpowers';
+    const checked = isCore || activeSet.has(p.id);
+    return `
+      <label class="inline-check" title="${escapeHtml(p.source || '')}">
+        <input type="checkbox" data-pack-id="${escapeHtml(p.id)}" ${checked ? 'checked' : ''} ${isCore ? 'disabled' : ''}>
+        ${escapeHtml(p.label)} (${p.count})${isCore ? ' <span class="muted">(router)</span>' : ''}
+      </label>`;
+  }).join('');
+}
+
+function readSkillPackPicker(containerEl) {
+  if (!containerEl) return null;
+  const boxes = [...containerEl.querySelectorAll('input[data-pack-id]')];
+  if (boxes.length === 0) return null;
+  const selected = boxes.filter((b) => b.checked || b.dataset.packId === 'superpowers').map((b) => b.dataset.packId);
+  return selected.length === boxes.length ? null : selected;
+}
+
+function renderExpertCheckboxPicker(containerEl, enabledIds) {
+  if (!containerEl) return;
+  const activeSet = Array.isArray(enabledIds)
+    ? new Set(enabledIds)
+    : new Set(state.expertsRoster.map((e) => e.id));
+  containerEl.innerHTML = state.expertsRoster.map((e) => `
+    <label class="expert-picker-item">
+      <input type="checkbox" data-exp-pick="${escapeHtml(e.id)}" ${activeSet.has(e.id) ? 'checked' : ''}>
+      <span>
+        <strong>${escapeHtml(e.name)}</strong><br>
+        <span class="small muted">${escapeHtml(e.category || 'Custom')}</span>
+      </span>
+    </label>
+  `).join('');
+}
+
+function readExpertCheckboxPicker(containerEl) {
+  if (!containerEl) return null;
+  const boxes = [...containerEl.querySelectorAll('input[data-exp-pick]')];
+  if (boxes.length === 0) return null;
+  const selected = boxes.filter((b) => b.checked).map((b) => b.dataset.expPick);
+  return selected.length === boxes.length ? null : selected;
+}
+
+function wireExpertPresetButtons(presetsEl, pickerEl) {
+  if (!presetsEl || !pickerEl) return;
+  presetsEl.querySelectorAll('button[data-preset]').forEach((btn) => {
+    btn.onclick = () => {
+      const targetIds = new Set(computeExpertPresetIds(btn.dataset.preset));
+      pickerEl.querySelectorAll('input[data-exp-pick]').forEach((box) => {
+        box.checked = targetIds.has(box.dataset.expPick);
+      });
+    };
+  });
+}
+
+function renderExpertDefaultSkillsPicker(selectedSkills = []) {
+  const el = $('#exp-default-skills');
+  if (!el) return;
+  const sel = new Set(Array.isArray(selectedSkills) ? selectedSkills : []);
+  el.innerHTML = state.skills.map((s) => `
+    <label class="skill-chip-option" title="${escapeHtml(s.description || '')}">
+      <input type="checkbox" data-exp-skill="${escapeHtml(s.name)}" ${sel.has(s.name) ? 'checked' : ''}>
+      ${escapeHtml(s.name)}
+    </label>
+  `).join('');
+}
+
+function readExpertDefaultSkillsPicker() {
+  const el = $('#exp-default-skills');
+  if (!el) return [];
+  return [...el.querySelectorAll('input[data-exp-skill]:checked')].map((b) => b.dataset.expSkill);
+}
+
+async function saveSessionEnabledExperts(nextIds) {
+  if (!state.activeSessionId) return;
+  const normalized = Array.isArray(nextIds) && nextIds.length === state.expertsRoster.length ? null : nextIds;
+  const { session } = await api(`/api/sessions/${state.activeSessionId}`, {
+    method: 'PUT',
+    body: JSON.stringify({ enabledExpertIds: normalized }),
+  });
+  if (state.activeDetail) state.activeDetail.session = { ...state.activeDetail.session, ...session };
+  updateExpertsButtonLabel();
+  renderExpertRosterList();
+}
+
 function openSessionSettingsModal() {
   const session = state.activeDetail?.session;
   if (!session) return;
@@ -1382,6 +1522,10 @@ function openSessionSettingsModal() {
   $('#ss-uninterrupted').checked = session.uninterruptedMode !== false;
   $('#ss-max-turns').value = session.maxTurns || 100;
 
+  renderSkillPackPicker($('#ss-skill-packs'), session.enabledSkillPacks);
+  renderExpertCheckboxPicker($('#ss-expert-picker'), session.enabledExpertIds);
+  wireExpertPresetButtons($('#ss-expert-presets'), $('#ss-expert-picker'));
+
   bindProviderModelDatalist($('#ss-sub-provider'), $('#ss-sub-model'), $('#dl-ss-sub-models'));
   bindProviderModelDatalist($('#ss-coord-provider'), $('#ss-coord-model'), $('#dl-ss-coord-models'));
   bindProviderModelDatalist($('#ss-exp-provider'), $('#ss-exp-model'), $('#dl-ss-exp-models'));
@@ -1396,6 +1540,9 @@ function openNewSessionModal() {
   $('#ns-sub-model').value = '';
   $('#ns-coord-model').value = '';
   $('#ns-exp-model').value = '';
+  renderSkillPackPicker($('#ns-skill-packs'), null);
+  renderExpertCheckboxPicker($('#ns-expert-picker'), null);
+  wireExpertPresetButtons($('#ns-expert-presets'), $('#ns-expert-picker'));
   bindProviderModelDatalist($('#ns-sub-provider'), $('#ns-sub-model'), $('#dl-sub-models'));
   bindProviderModelDatalist($('#ns-coord-provider'), $('#ns-coord-model'), $('#dl-coord-models'));
   bindProviderModelDatalist($('#ns-exp-provider'), $('#ns-exp-model'), $('#dl-exp-models'));
@@ -1583,12 +1730,65 @@ function setMobilePane(pane) {
 
 function renderExpertRosterList() {
   const list = $('#expert-roster-list');
-  list.innerHTML = state.expertsRoster.map((e) => `
-    <div class="modal-list-item ${e.id === state.selectedExpertId ? 'active' : ''}" data-eid="${escapeHtml(e.id)}">
-      <div>${escapeHtml(e.name)}</div>
-      <div class="small muted">${escapeHtml(e.category || 'Custom')}</div>
-    </div>
-  `).join('');
+  const session = state.activeDetail?.session || null;
+  const activeSet = session ? getSessionEnabledExpertSet(session) : null;
+
+  const bar = $('#experts-session-bar');
+  if (bar) {
+    if (session) {
+      bar.classList.remove('hidden');
+      const activeCount = state.expertsRoster.filter((e) => activeSet.has(e.id)).length;
+      const lbl = $('#experts-session-label');
+      if (lbl) lbl.textContent = `Session "${session.title}": ${activeCount}/${state.expertsRoster.length} active`;
+      const presets = $('#roster-session-presets');
+      if (presets) {
+        presets.querySelectorAll('button[data-preset]').forEach((btn) => {
+          btn.onclick = async () => {
+            try {
+              const ids = computeExpertPresetIds(btn.dataset.preset);
+              await saveSessionEnabledExperts(ids);
+              showToast(`Updated active experts for "${session.title}".`, 'success', 2000);
+            } catch (err) {
+              showToast(err.message, 'error');
+            }
+          };
+        });
+      }
+    } else {
+      bar.classList.add('hidden');
+    }
+  }
+
+  list.innerHTML = state.expertsRoster.map((e) => {
+    const enabledInSession = !activeSet || activeSet.has(e.id);
+    const skillCount = (e.defaultSkills || []).length;
+    const skillHint = skillCount > 0 ? ` · ${skillCount} skill${skillCount === 1 ? '' : 's'}` : '';
+    return `
+      <div class="modal-list-item expert-roster-row ${e.id === state.selectedExpertId ? 'active' : ''} ${enabledInSession ? '' : 'session-disabled'}" data-eid="${escapeHtml(e.id)}">
+        ${session ? `<input type="checkbox" class="chk-session-expert" data-eid="${escapeHtml(e.id)}" ${enabledInSession ? 'checked' : ''} title="Enable or disable in current session">` : ''}
+        <div style="min-width:0;flex:1">
+          <div>${escapeHtml(e.name)}</div>
+          <div class="small muted">${escapeHtml(e.category || 'Custom')}${skillHint}</div>
+        </div>
+      </div>`;
+  }).join('');
+
+  list.querySelectorAll('.chk-session-expert').forEach((chk) => {
+    chk.addEventListener('click', (ev) => ev.stopPropagation());
+    chk.addEventListener('change', async (ev) => {
+      ev.stopPropagation();
+      try {
+        const nextSet = getSessionEnabledExpertSet(state.activeDetail?.session);
+        if (chk.checked) nextSet.add(chk.dataset.eid);
+        else nextSet.delete(chk.dataset.eid);
+        await saveSessionEnabledExperts([...nextSet]);
+      } catch (err) {
+        showToast(err.message, 'error');
+        renderExpertRosterList();
+      }
+    });
+  });
+
   list.querySelectorAll('.modal-list-item').forEach((el) => {
     el.addEventListener('click', () => selectExpertInModal(el.dataset.eid));
   });
@@ -1602,6 +1802,7 @@ function selectExpertInModal(id) {
   if (!e) {
     f.reset();
     f.elements.id.readOnly = false;
+    renderExpertDefaultSkillsPicker([]);
     return;
   }
   f.elements.id.value = e.id;
@@ -1614,6 +1815,7 @@ function selectExpertInModal(id) {
   f.elements.model.value = e.model || '';
   f.elements.readOnly.checked = Boolean(e.readOnly);
   f.elements.allowVisualCompanion.checked = Boolean(e.allowVisualCompanion);
+  renderExpertDefaultSkillsPicker(e.defaultSkills || []);
 }
 
 // ----- Event Wiring -----
@@ -2008,6 +2210,8 @@ $('#form-new-session').addEventListener('submit', async (e) => {
     const body = Object.fromEntries(fd.entries());
     body.createIfMissing = e.target.elements.createIfMissing.checked;
     body.uninterruptedMode = e.target.elements.uninterruptedMode.checked;
+    body.enabledSkillPacks = readSkillPackPicker($('#ns-skill-packs'));
+    body.enabledExpertIds = readExpertCheckboxPicker($('#ns-expert-picker'));
     const { session } = await api('/api/sessions', { method: 'POST', body: JSON.stringify(body) });
     $('#modal-new-session').classList.add('hidden');
     e.target.reset();
@@ -2036,6 +2240,8 @@ $('#form-session-settings').addEventListener('submit', async (e) => {
       expertModel: f.elements.expertModel.value.trim(),
       uninterruptedMode: f.elements.uninterruptedMode.checked,
       maxTurns,
+      enabledSkillPacks: readSkillPackPicker($('#ss-skill-packs')),
+      enabledExpertIds: readExpertCheckboxPicker($('#ss-expert-picker')),
     };
     await api(`/api/sessions/${state.activeSessionId}`, {
       method: 'PUT',
@@ -2140,11 +2346,12 @@ $('#form-expert').addEventListener('submit', async (e) => {
       model: f.elements.model.value,
       readOnly: f.elements.readOnly.checked,
       allowVisualCompanion: f.elements.allowVisualCompanion.checked,
+      defaultSkills: readExpertDefaultSkillsPicker(),
     };
     const { expert } = await api('/api/experts', { method: 'POST', body: JSON.stringify(body) });
     const res = await api('/api/experts');
     state.expertsRoster = res.experts;
-    $('#btn-experts').textContent = `Expert Roster (${state.expertsRoster.length})`;
+    updateExpertsButtonLabel();
     selectExpertInModal(expert?.id || body.id);
     showToast(`Expert "${body.name}" saved.`, 'success', 2500);
   } catch (err) {
@@ -2160,7 +2367,7 @@ $('#btn-delete-expert').onclick = async () => {
     await api(`/api/experts/${encodeURIComponent(id)}`, { method: 'DELETE' });
     const res = await api('/api/experts');
     state.expertsRoster = res.experts;
-    $('#btn-experts').textContent = `Expert Roster (${state.expertsRoster.length})`;
+    updateExpertsButtonLabel();
     selectExpertInModal(state.expertsRoster[0]?.id || null);
     showToast(`Expert "${id}" deleted.`, 'info');
   } catch (err) {

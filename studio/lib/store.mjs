@@ -100,6 +100,7 @@ export const DEFAULT_EXPERTS = [
     allowVisualCompanion: false,
     providerId: '',
     model: '',
+    defaultSkills: [],
     systemPrompt: `You are a Senior DICOM Engineer with deep mastery of the NEMA DICOM PS3.x standard.
 - Verify SOP Class UIDs, Transfer Syntax UIDs, explicit/implicit VR encoding, private tag conventions, and character set handling (Specific Character Set 0008,0005).
 - Handle pixel data pipelines rigorously: Photometric Interpretation, Bits Allocated/Stored/High Bit, Pixel Representation (signed vs unsigned), Rescale Slope/Intercept, VOI LUT / Window Center & Width, multi-frame functional groups, and compressed transfer syntaxes (JPEG 2000, HTJ2K, JPEG-LS, RLE).
@@ -115,6 +116,7 @@ export const DEFAULT_EXPERTS = [
     allowVisualCompanion: false,
     providerId: '',
     model: '',
+    defaultSkills: [],
     systemPrompt: `You are a Senior HL7 & FHIR Interoperability Engineer.
 - Ensure strict schema and cardinality compliance for HL7 v2.x pipe-delimited messages (MSH/PID/PV1/ORC/OBR/OBX/NTE, escaping rules, MLLP framing, ACK/NAK handling) and FHIR R4/R4B/R5 JSON/XML resources (Patient, ImagingStudy, DiagnosticReport, Observation, ServiceRequest, Practitioner, Bundle, OperationOutcome).
 - Preserve clinically accurate coding systems and URIs (LOINC, SNOMED CT, ICD-10-CM, RadLex, UCUM units, DICOM UIDs as urn:oid:...).
@@ -130,6 +132,7 @@ export const DEFAULT_EXPERTS = [
     allowVisualCompanion: true,
     providerId: '',
     model: '',
+    defaultSkills: [],
     systemPrompt: `You are a Certified Medical & Anatomical Illustrator specializing in clear, anatomically faithful digital schematics and SVG/HTML visualizations.
 - Maintain strict anatomical orientation conventions and explicitly label view planes (Axial/Transverse, Sagittal, Coronal/Frontal) and convention (Radiological left-on-right vs Anatomical view, Superior/Inferior, Anterior/Posterior, Medial/Lateral).
 - Produce crisp, scalable SVG or HTML/Canvas diagrams with unambiguous leader-line callouts, clean visual hierarchy, accessible contrast, and color-blind-safe medical palettes.
@@ -145,6 +148,7 @@ export const DEFAULT_EXPERTS = [
     allowVisualCompanion: false,
     providerId: '',
     model: '',
+    defaultSkills: [],
     systemPrompt: `You are a Human Physiology Expert (PhD/MD-level domain specialist).
 - Provide rigorous physiological accuracy across cardiovascular/hemodynamic, pulmonary, neurophysiological, renal, endocrine, gastrointestinal, hematologic, and musculoskeletal systems.
 - Cite exact physiological units (SI and conventional clinical units), normal adult/pediatric reference ranges, quantitative relationships (e.g., Frank-Starling, Poiseuille, Fick, Henderson-Hasselbalch, Nernst/Goldman), and pathophysiological mechanisms.
@@ -159,6 +163,7 @@ export const DEFAULT_EXPERTS = [
     allowVisualCompanion: false,
     providerId: '',
     model: '',
+    defaultSkills: ['test-driven-development'],
     systemPrompt: `You are a disciplined Software Implementer. Follow TDD (write failing test first, verify failure, write minimal clean code, verify pass), keep changes focused and DRY, and report exact test command outputs.`,
   },
   {
@@ -170,6 +175,7 @@ export const DEFAULT_EXPERTS = [
     allowVisualCompanion: false,
     providerId: '',
     model: '',
+    defaultSkills: [],
     systemPrompt: `You are an adversarial Code Reviewer. Inspect code and tests critically for spec mismatches, security bugs, race conditions, and missing edge cases. Rank findings by severity (Critical / Important / Minor) with exact file and line citations.`,
   },
   {
@@ -181,6 +187,7 @@ export const DEFAULT_EXPERTS = [
     allowVisualCompanion: false,
     providerId: '',
     model: '',
+    defaultSkills: ['systematic-debugging'],
     systemPrompt: `You are a Systematic Debugger. Never guess-and-patch symptoms: reproduce the failure reliably, trace the root cause with evidence, write a regression test, apply the minimal fix, and verify the full test suite passes.`,
   },
   {
@@ -192,6 +199,7 @@ export const DEFAULT_EXPERTS = [
     allowVisualCompanion: false,
     providerId: '',
     model: '',
+    defaultSkills: [],
     systemPrompt: `You are a Technical Researcher. Explore the workspace thoroughly using read-only tools and return a well-structured, evidence-backed summary with exact file paths and symbol names.`,
   },
   {
@@ -203,6 +211,7 @@ export const DEFAULT_EXPERTS = [
     allowVisualCompanion: false,
     providerId: '',
     model: '',
+    defaultSkills: ['security-and-hardening'],
     systemPrompt: `You are an experienced Security Engineer conducting a practical, exploitability-focused security audit (load the \`security-and-hardening\` skill and its \`references/security-checklist.md\` when helpful).
 - Start from trust boundaries (HTTP inputs, uploads, webhooks, third-party APIs, file paths, shell arguments, and LLM outputs) and reason with STRIDE before listing findings.
 - Audit input validation & injection (SQL/NoSQL/OS/XSS/path traversal/SSRF), authentication & authorization (IDOR, session flags, rate limits), secrets & PII handling, security headers/CORS, and dependency/supply-chain risk.
@@ -218,6 +227,7 @@ export const DEFAULT_EXPERTS = [
     allowVisualCompanion: false,
     providerId: '',
     model: '',
+    defaultSkills: ['performance-optimization'],
     systemPrompt: `You are a Web Performance Engineer auditing loading, rendering, and runtime efficiency (load the \`performance-optimization\` skill and its \`references/performance-checklist.md\` when helpful).
 - Apply strict metric honesty: if you only inspect source code (Quick mode), tag findings as **potential impact** and never fabricate benchmark numbers; if live measurements, Lighthouse/trace JSON, or profiling outputs are available (Deep mode), cite the exact measured numbers.
 - Check Core Web Vitals risks (LCP render-blocking assets, unoptimized images/missing dimensions for CLS, main-thread long tasks for INP), bundle bloat, unnecessary re-renders, N+1 queries, and unbounded fetches.
@@ -232,6 +242,7 @@ export const DEFAULT_EXPERTS = [
     allowVisualCompanion: false,
     providerId: '',
     model: '',
+    defaultSkills: ['accessibility-engineering'],
     systemPrompt: `You are an Accessibility Engineer auditing interfaces for WCAG 2.2 Level AA conformance (load the \`accessibility-engineering\` skill and its \`references/accessibility-checklist.md\` when helpful).
 - Map every violation to its exact WCAG 2.2 Success Criterion (distinguishing hard violations from UX recommendations) and rank by real user impact (Critical / Serious / Moderate / Minor).
 - Check keyboard navigation, visible focus indicators (never remove outlines or use tabindex > 0), semantic landmarks/headings, form labels & error announcements, ARIA roles/states, contrast ratios (4.5:1 normal text, 3:1 large text & UI components), and AI-generated UI anti-patterns.
@@ -246,6 +257,7 @@ export const DEFAULT_EXPERTS = [
     allowVisualCompanion: false,
     providerId: '',
     model: '',
+    defaultSkills: ['test-driven-development'],
     systemPrompt: `You are an experienced QA & Test Engineer focused on test strategy, coverage analysis, and high-signal automated tests.
 - Test at the lowest level that captures real behavior (Unit for pure logic, Integration across boundaries, E2E for critical user flows) and test behavior rather than implementation details.
 - For bugs, follow the Prove-It pattern: write a failing reproduction test first, confirm it fails for the right reason, then verify the fix makes it pass.
@@ -313,6 +325,26 @@ function maskKey(key) {
   return `${key.slice(0, 3)}…${key.slice(-4)}`;
 }
 
+function normalizeStringList(val) {
+  if (!Array.isArray(val)) return [];
+  return [...new Set(val.map((x) => String(x || '').trim()).filter(Boolean))];
+}
+
+function normalizeEnabledExpertIds(val) {
+  if (val === null || val === undefined) return null;
+  if (!Array.isArray(val)) return null;
+  return normalizeStringList(val);
+}
+
+function normalizeEnabledSkillPacks(val) {
+  if (val === null || val === undefined) return null;
+  if (!Array.isArray(val)) return null;
+  const list = normalizeStringList(val);
+  // Superpowers Core is always enabled as the single primary router
+  if (!list.includes('superpowers')) list.unshift('superpowers');
+  return list;
+}
+
 export function createStore({ dataDir }) {
   ensureDir(dataDir);
   const providersFile = path.join(dataDir, 'providers.json');
@@ -331,15 +363,30 @@ export function createStore({ dataDir }) {
     atomicWriteJson(expertsFile, DEFAULT_EXPERTS);
   } else {
     // Non-destructive upgrade: append any newly introduced built-in experts
-    // that are neither present nor explicitly deleted by the user.
+    // that are neither present nor explicitly deleted by the user, and backfill
+    // defaultSkills on built-in experts that predate the field.
     const existingList = readJsonSafe(expertsFile, null);
     if (Array.isArray(existingList)) {
-      const existingIds = new Set(existingList.map((e) => e?.id).filter(Boolean));
+      const defaultsById = new Map(DEFAULT_EXPERTS.map((d) => [d.id, d]));
+      let changed = false;
+      const upgraded = existingList.map((e) => {
+        if (e && e.defaultSkills === undefined) {
+          const def = defaultsById.get(e.id);
+          changed = true;
+          return { ...e, defaultSkills: Array.isArray(def?.defaultSkills) ? [...def.defaultSkills] : [] };
+        }
+        return e;
+      });
+      const existingIds = new Set(upgraded.map((e) => e?.id).filter(Boolean));
       const rawSettings = readJsonSafe(settingsFile, {});
       const dismissed = new Set(Array.isArray(rawSettings?.dismissedDefaultExperts) ? rawSettings.dismissedDefaultExperts : []);
       const toAppend = DEFAULT_EXPERTS.filter((d) => !existingIds.has(d.id) && !dismissed.has(d.id));
       if (toAppend.length > 0) {
-        atomicWriteJson(expertsFile, [...existingList, ...structuredClone(toAppend)]);
+        upgraded.push(...structuredClone(toAppend));
+        changed = true;
+      }
+      if (changed) {
+        atomicWriteJson(expertsFile, upgraded);
       }
     }
   }
@@ -442,6 +489,9 @@ export function createStore({ dataDir }) {
         : Boolean(existing.allowVisualCompanion),
       providerId: profile.providerId !== undefined ? profile.providerId : (existing.providerId || ''),
       model: profile.model !== undefined ? profile.model : (existing.model || ''),
+      defaultSkills: profile.defaultSkills !== undefined
+        ? normalizeStringList(profile.defaultSkills)
+        : normalizeStringList(existing.defaultSkills),
       systemPrompt: profile.systemPrompt !== undefined ? profile.systemPrompt : (existing.systemPrompt || ''),
     };
     if (idx >= 0) list[idx] = merged;
@@ -510,6 +560,8 @@ export function createStore({ dataDir }) {
       expertProviderId: input.expertProviderId || '',
       expertModel: input.expertModel || '',
       pinnedSkills: Array.isArray(input.pinnedSkills) ? input.pinnedSkills : [],
+      enabledExpertIds: normalizeEnabledExpertIds(input.enabledExpertIds),
+      enabledSkillPacks: normalizeEnabledSkillPacks(input.enabledSkillPacks),
       rules: input.rules || '',
       plan: input.plan || '',
       tasks: Array.isArray(input.tasks) ? input.tasks : [],
@@ -572,9 +624,16 @@ export function createStore({ dataDir }) {
   function updateSession(id, patch) {
     const existing = getSession(id);
     if (!existing) throw new Error(`Session not found: ${id}`);
+    const cleanPatch = { ...patch };
+    if (Object.prototype.hasOwnProperty.call(cleanPatch, 'enabledExpertIds')) {
+      cleanPatch.enabledExpertIds = normalizeEnabledExpertIds(cleanPatch.enabledExpertIds);
+    }
+    if (Object.prototype.hasOwnProperty.call(cleanPatch, 'enabledSkillPacks')) {
+      cleanPatch.enabledSkillPacks = normalizeEnabledSkillPacks(cleanPatch.enabledSkillPacks);
+    }
     const next = {
       ...existing,
-      ...patch,
+      ...cleanPatch,
       id: existing.id,
       updatedAt: new Date().toISOString(),
     };
