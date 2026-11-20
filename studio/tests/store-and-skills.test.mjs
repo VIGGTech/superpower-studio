@@ -193,6 +193,12 @@ test('createStore seeds 7 providers, 12 experts (incl. 4 medical + 4 quality/sec
     assert.equal(ablit.baseUrl, 'https://api.abliteration.ai/v1');
     assert.equal(ablit.toolMode, 'auto');
     assert.equal(ablit.effectiveApiKey, 'ak_test_secret_9999');
+    assert.deepEqual(ablit.models, [
+      'abliterated-model-large-flash',
+      'abliterated-model',
+      'abliterated-model-large-v2',
+      'abliterated-model-large',
+    ]);
 
     const masked = store.getProvidersMasked().find((p) => p.id === 'abliteration');
     assert.equal(masked.hasKey, true);

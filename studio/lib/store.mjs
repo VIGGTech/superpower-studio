@@ -60,7 +60,12 @@ export const DEFAULT_PROVIDERS = [
     envVar: 'ABLIT_KEY',
     envVarFallbacks: ['ABLITERATION_API_KEY'],
     defaultModel: 'abliterated-model',
-    models: [],
+    models: [
+      'abliterated-model-large-flash',
+      'abliterated-model',
+      'abliterated-model-large-v2',
+      'abliterated-model-large',
+    ],
     toolMode: 'auto',
     extraHeaders: {},
   },
@@ -355,6 +360,24 @@ export function createStore({ dataDir }) {
 
   if (!fs.existsSync(providersFile)) {
     atomicWriteJson(providersFile, DEFAULT_PROVIDERS, 0o600);
+  } else {
+    // Non-destructive upgrade: backfill default models for built-in providers whose models array is empty
+    const existingProviders = readJsonSafe(providersFile, null);
+    if (Array.isArray(existingProviders)) {
+      const defaultsById = new Map(DEFAULT_PROVIDERS.map((d) => [d.id, d]));
+      let changed = false;
+      const upgraded = existingProviders.map((p) => {
+        const def = p && defaultsById.get(p.id);
+        if (def && (!Array.isArray(p.models) || p.models.length === 0) && Array.isArray(def.models) && def.models.length > 0) {
+          changed = true;
+          return { ...p, models: [...def.models] };
+        }
+        return p;
+      });
+      if (changed) {
+        atomicWriteJson(providersFile, upgraded, 0o600);
+      }
+    }
   }
   if (!fs.existsSync(settingsFile)) {
     atomicWriteJson(settingsFile, { shell: 'auto', autoResumeOnRestart: true });

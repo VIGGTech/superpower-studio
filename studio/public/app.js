@@ -1356,6 +1356,17 @@ function populateProviderSelect(selectEl, includeInherit = false) {
 
 const CUSTOM_MODEL_VALUE = '__custom__';
 
+const KNOWN_MODEL_LABELS = {
+  'abliterated-model-large-flash': 'abliterated-model-large-flash — DeepSeek V4.1-Flash · 1M ctx · Text & Images',
+  'abliterated-model': 'abliterated-model — 262K ctx · Text & Images',
+  'abliterated-model-large-v2': 'abliterated-model-large-v2 — GLM-5.3 · 1M ctx · Text only',
+  'abliterated-model-large': 'abliterated-model-large — 1M ctx · Text only (Deprecated)',
+};
+
+function formatModelOptionLabel(modelId) {
+  return KNOWN_MODEL_LABELS[modelId] || modelId;
+}
+
 function getProviderModelOptions(provider) {
   if (!provider) return [];
   const raw = [...(Array.isArray(provider.models) ? provider.models : [])];
@@ -1381,7 +1392,7 @@ function syncModelCombo(selectEl, inputEl, models, { allowInherit = false, inher
   if (allowInherit) {
     opts += `<option value="">${escapeHtml(inheritLabel)}</option>`;
   }
-  opts += list.map((m) => `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`).join('');
+  opts += list.map((m) => `<option value="${escapeHtml(m)}">${escapeHtml(formatModelOptionLabel(m))}</option>`).join('');
   opts += `<option value="${CUSTOM_MODEL_VALUE}">Custom model ID…</option>`;
   selectEl.innerHTML = opts;
 
