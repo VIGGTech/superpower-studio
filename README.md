@@ -48,18 +48,19 @@ node studio/daemon.mjs open   # starts detached background daemon & opens browse
 
 ### 2. Add Your API Keys
 - Click **1. Configure API Keys** on the welcome screen (or **Providers & Models** in the bottom-left sidebar).
-- Pick any provider — **Anthropic (Claude)**, **Google Gemini**, **DeepSeek**, **Alibaba Qwen**, **Abliteration.ai**, **OpenRouter**, **Ollama (local)**, or **+ Add Custom API** — paste your key, click **Test**, and click **Save Provider**.
+- Pick any provider — **Anthropic (Claude)**, **Google Gemini**, **DeepSeek**, **Alibaba Qwen**, **Abliteration.ai**, **OpenRouter**, **Ollama (local)**, or **+ Add Custom API** — paste your key, click **Fetch Models** to populate the full model dropdown (+ **`Custom model ID…`**) across all modals, click **Test Connection**, and click **Save Provider**.
 - All API keys and sessions stay **100% local** (`%LOCALAPPDATA%\SuperpowersStudio` or `.superpowers-studio/`).
 
 ### 3. Run a Session (Interview → Dispatch → Autonomous Execution)
-1. Click **+ New Session**, choose a workspace folder (created automatically if missing), and pick your **Subordinate**, **Coordinator**, and **Expert** models (editable live anytime via **Settings**).
+1. Click **+ New Session**, choose a workspace folder (created automatically if missing), pick your **Subordinate**, **Coordinator**, and **Expert** models, and tailor **Skill Packs** & **Active Experts** per session using one-click presets (**All**, **Software & Web**, **Medical & Imaging**, **None**) or checkboxes — all live-editable anytime via **Settings** or **Expert Roster** (where you can also configure each expert's auto-loaded **Default Skills**).
 2. Chat with the **Subordinate** — paste reference screenshots (`Ctrl+V` / `+ Image`), type `/skill-name` to invoke any of the 23 live skills (filterable by pack in the **Skills** tab with built-in checklist viewer), or click the **Quick Actions** buttons above the composer.
 3. Click **Approve & Dispatch** to lock your rules and launch the **Coordinator** and parallel **Experts**.
-4. Monitor & steer live:
+4. Monitor, steer, or clean up:
    - **Agents tab:** Watch active agents pinned at the top while completed Experts & `Done Tasks` auto-collapse into expandable drawers.
    - **Visual tab:** Inspect sandboxed HTML screens (with automatic workspace image inlining + screen switcher) or click **Outputs** to browse and zoom every generated PNG/SVG in your workspace.
    - **Resizable layout:** Drag the vertical dividers to resize sidebars (double-click to reset).
    - **Steer anytime:** Chat with the Subordinate or click **Relay to Coordinator** without stopping execution.
+   - **Safe Delete / Purge:** Click **`×`** on a session card (or **Delete / Purge Session…** in **Settings**) to erase session history, remove isolated worktrees/branches, and optionally delete a dedicated workspace folder with built-in safety guards.
 
 ### 4. Background Persistence, Windows Auto-Start & Mobile Phone Control
 Open **Background & Service** (bottom-left sidebar) to:
