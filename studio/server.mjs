@@ -762,7 +762,7 @@ export async function createStudioServer({
             }
           }
           await orchestrator.stopSession(id);
-          const wt = await cleanupSessionWorktree({ session, force, deleteBranch });
+          const wt = await cleanupSessionWorktree({ session, dataDir, force, deleteBranch });
           if (session.worktreeBranch && !wt.removed && wt.dirtyFiles?.length) {
             return sendJson(res, 409, {
               error: 'Worktree has uncommitted changes. Pass ?force=true to remove worktree (branch is preserved).',

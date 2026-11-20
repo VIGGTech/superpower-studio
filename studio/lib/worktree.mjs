@@ -119,51 +119,92 @@ export async function prepareSessionWorkspace({ session, activeSessions = [], da
   };
 }
 
-export async function cleanupSessionWorktree({ session, force = false, deleteBranch = false }) {
+function resolveIsolatedWorktreeRoot(session, dataDir = '') {
+  if (!session?.id || !session?.effectiveWorkDir) return null;
+  const effDir = path.resolve(session.effectiveWorkDir);
+  if (dataDir) {
+    const expected = path.resolve(dataDir, 'worktrees', session.id);
+    if (isSameOrAncestor(expected, effDir)) return expected;
+  }
+  // Fallback when dataDir is not explicitly passed: walk up only to .../worktrees/<session.id>
+  let cur = effDir;
+  while (true) {
+    const parent = path.dirname(cur);
+    if (path.basename(cur) === session.id && path.basename(parent).toLowerCase() === 'worktrees') {
+      return cur;
+    }
+    if (parent === cur) break;
+    cur = parent;
+  }
+  return null;
+}
+
+export async function cleanupSessionWorktree({ session, dataDir = '', force = false, deleteBranch = false }) {
   if (!session?.worktreeBranch || !session?.effectiveWorkDir) {
     return { removed: false, branchDeleted: false };
   }
   const effDir = path.resolve(session.effectiveWorkDir);
-  if (effDir.toLowerCase() === path.resolve(session.workspacePath).toLowerCase()) {
+  if (normalizeForCompare(effDir) === normalizeForCompare(session.workspacePath)) {
     return { removed: false, branchDeleted: false };
   }
 
   const primaryRoot = await detectGitRoot(session.workspacePath);
+  const wtDir = resolveIsolatedWorktreeRoot(session, dataDir);
+
+  // HARD SAFETY INVARIANT: never touch anything outside worktrees/<session.id> or any ancestor of primaryRoot/workspacePath
+  if (!wtDir) {
+    return { removed: false, branchDeleted: false };
+  }
+  if (primaryRoot && isSameOrAncestor(wtDir, primaryRoot)) {
+    throw new Error(`Safety block: refused to remove primary repository root "${primaryRoot}"`);
+  }
+  if (session.workspacePath && isSameOrAncestor(wtDir, session.workspacePath)) {
+    throw new Error(`Safety block: refused to remove primary workspace "${session.workspacePath}"`);
+  }
+
   let removed = false;
 
-  if (!fs.existsSync(effDir)) {
+  if (!fs.existsSync(wtDir)) {
     removed = true;
     if (primaryRoot) {
       try { await runGit(['worktree', 'prune'], primaryRoot); } catch { /* ignore */ }
     }
   } else {
-    const wtDir = (await detectGitRoot(effDir)) || effDir;
-    const status = await getWorkspaceStatus(wtDir);
-    if (!force && status.changedFiles.length > 0) {
-      return {
-        removed: false,
-        branchDeleted: false,
-        dirtyFiles: status.changedFiles.map((f) => `${f.status} ${f.path}`),
-      };
-    }
-
-    if (primaryRoot) {
-      const args = ['worktree', 'remove'];
-      if (force) args.push('--force');
-      args.push(wtDir);
-      try {
-        await runGit(args, primaryRoot);
-      } catch {
-        if (force) {
-          fs.rmSync(wtDir, { recursive: true, force: true, maxRetries: 6, retryDelay: 80 });
-          try { await runGit(['worktree', 'prune'], primaryRoot); } catch { /* ignore */ }
-        } else {
-          throw new Error(`Failed to remove worktree at ${wtDir}`);
-        }
+    const hasGitMarker = fs.existsSync(path.join(wtDir, '.git'));
+    if (hasGitMarker) {
+      const status = await getWorkspaceStatus(wtDir);
+      if (!force && status.changedFiles.length > 0) {
+        return {
+          removed: false,
+          branchDeleted: false,
+          dirtyFiles: status.changedFiles.map((f) => `${f.status} ${f.path}`),
+        };
       }
-      removed = true;
-    } else if (force) {
+      if (primaryRoot) {
+        const args = ['worktree', 'remove'];
+        if (force) args.push('--force');
+        args.push(wtDir);
+        try {
+          await runGit(args, primaryRoot);
+        } catch {
+          if (force) {
+            fs.rmSync(wtDir, { recursive: true, force: true, maxRetries: 6, retryDelay: 80 });
+            try { await runGit(['worktree', 'prune'], primaryRoot); } catch { /* ignore */ }
+          } else {
+            throw new Error(`Failed to remove worktree at ${wtDir}`);
+          }
+        }
+        removed = true;
+      } else if (force) {
+        fs.rmSync(wtDir, { recursive: true, force: true, maxRetries: 6, retryDelay: 80 });
+        removed = true;
+      }
+    } else {
+      // Orphaned/partial worktree folder whose .git pointer is already gone — safe to remove wtDir directly
       fs.rmSync(wtDir, { recursive: true, force: true, maxRetries: 6, retryDelay: 80 });
+      if (primaryRoot) {
+        try { await runGit(['worktree', 'prune'], primaryRoot); } catch { /* ignore */ }
+      }
       removed = true;
     }
   }

@@ -7,7 +7,7 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import { createStudioServer } from '../server.mjs';
-import { prepareSessionWorkspace, assessWorkspacePurgeSafety } from '../lib/worktree.mjs';
+import { prepareSessionWorkspace, cleanupSessionWorktree, assessWorkspacePurgeSafety } from '../lib/worktree.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SKILLS_ROOT = path.resolve(__dirname, '..', '..', 'skills');
@@ -141,6 +141,39 @@ test('DELETE /api/sessions/:id supports full purge of dirty worktree + branch AN
     assert.equal(studio.store.getSession(s3.id), null);
   } finally {
     await studio.close();
+    fs.rmSync(base, { recursive: true, force: true, maxRetries: 6, retryDelay: 80 });
+  }
+});
+
+test('CRITICAL SAFETY: cleanupSessionWorktree NEVER deletes primary repo when orphaned worktree subdir lacks .git file', async () => {
+  const base = makeTempDir('sp-wt-orphan-');
+  const gitRepo = path.join(base, 'repo');
+  const dataDir = path.join(gitRepo, '.superpowers-studio');
+  initTempGitRepo(gitRepo);
+  fs.writeFileSync(path.join(gitRepo, 'IMPORTANT.txt'), 'DO NOT DELETE');
+
+  // Create an orphaned worktree folder inside dataDir/worktrees/s_orphan/subproj WITHOUT a .git file
+  const wtRoot = path.join(dataDir, 'worktrees', 's_orphan');
+  const wtSub = path.join(wtRoot, 'subproj');
+  fs.mkdirSync(wtSub, { recursive: true });
+  fs.writeFileSync(path.join(wtSub, 'draft.txt'), 'temp');
+
+  try {
+    const res = await cleanupSessionWorktree({
+      session: {
+        id: 's_orphan',
+        workspacePath: path.join(gitRepo, 'subproj'),
+        effectiveWorkDir: wtSub,
+        worktreeBranch: 'superpowers/s_orphan',
+      },
+      dataDir,
+      force: true,
+      deleteBranch: true,
+    });
+    assert.equal(res.removed, true);
+    assert.equal(fs.existsSync(wtRoot), false, 'Orphaned worktree folder must be cleanly removed');
+    assert.equal(fs.existsSync(path.join(gitRepo, 'IMPORTANT.txt')), true, 'Primary git repo MUST NEVER be deleted!');
+  } finally {
     fs.rmSync(base, { recursive: true, force: true, maxRetries: 6, retryDelay: 80 });
   }
 });
