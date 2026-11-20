@@ -35,7 +35,13 @@ test('MSI packager stages bundled Node runtime, Studio, all 15 skills, Getting S
 
     const skillDirs = fs.readdirSync(path.join(stageDir, 'app', 'skills'), { withFileTypes: true })
       .filter((d) => d.isDirectory() && fs.existsSync(path.join(stageDir, 'app', 'skills', d.name, 'SKILL.md')));
-    assert.equal(skillDirs.length, 15, 'All 15 Superpowers skills must be bundled');
+    assert.equal(skillDirs.length, 15, 'All 15 Superpowers Core skills must be bundled');
+
+    const engSkillDirs = fs.readdirSync(path.join(stageDir, 'app', 'studio', 'skills'), { withFileTypes: true })
+      .filter((d) => d.isDirectory() && fs.existsSync(path.join(stageDir, 'app', 'studio', 'skills', d.name, 'SKILL.md')));
+    assert.equal(engSkillDirs.length, 8, 'All 8 Engineering Pack skills must be bundled');
+    assert.equal(fs.existsSync(path.join(stageDir, 'app', 'studio', 'skills', 'PACK.json')), true);
+    assert.equal(fs.existsSync(path.join(stageDir, 'app', 'studio', 'skills', 'security-and-hardening', 'references', 'security-checklist.md')), true);
 
     // 2. Launchers, icon, version metadata, MIT LICENSE, VIGGTech NOTICE, and Getting Started instructions
     const vInfo = getVersionInfo();
@@ -53,6 +59,8 @@ test('MSI packager stages bundled Node runtime, Studio, all 15 skills, Getting S
     assert.match(notice, /VIGGTech/);
     assert.match(notice, /https:\/\/github\.com\/obra\/superpowers/);
     assert.match(notice, /7\.0\.2/);
+    assert.match(notice, /https:\/\/github\.com\/addyosmani\/agent-skills/);
+    assert.match(notice, /Addy Osmani/);
 
     assert.equal(fs.existsSync(path.join(stageDir, 'assets', 'superpowers-studio.ico')), true);
     assert.equal(fs.existsSync(path.join(stageDir, 'app', 'launch-studio.vbs')), true);

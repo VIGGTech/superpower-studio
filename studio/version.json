@@ -11,5 +11,14 @@
     "url": "https://github.com/obra/superpowers",
     "author": "Jesse Vincent",
     "license": "MIT"
-  }
+  },
+  "attributions": [
+    {
+      "name": "addyosmani/agent-skills",
+      "url": "https://github.com/addyosmani/agent-skills",
+      "author": "Addy Osmani",
+      "license": "MIT",
+      "scope": "Engineering Pack (8 curated skills + checklists) and 4 Quality & Security expert personas"
+    }
+  ]
 }

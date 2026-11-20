@@ -31,7 +31,6 @@ test('HTTP auth cookie, Origin=null CSRF rejection, sandboxed companion CSP, ski
 
   const studio = await createStudioServer({
     dataDir,
-    skillsRoot: SKILLS_ROOT,
     port: 0,
     host: '127.0.0.1',
     streamChatImpl: async ({ systemPrompt }) => {
@@ -62,26 +61,36 @@ test('HTTP auth cookie, Origin=null CSRF rejection, sandboxed companion CSP, ski
 
     const headers = { Cookie: cookie, Origin: base, 'Content-Type': 'application/json' };
 
-    // 3. Skills API returns all 15 live skills & individual skill contents
+    // 3. Skills API returns all 23 live skills across both packs & individual skill/reference contents
     const skillsRes = await fetch(`${base}/api/skills`, { headers });
     assert.equal(skillsRes.status, 200);
     const skillsData = await skillsRes.json();
-    assert.equal(skillsData.skills.length, 15);
+    assert.equal(skillsData.skills.length, 23);
+    assert.equal(skillsData.packs.length, 2);
 
     const tddRes = await fetch(`${base}/api/skills/test-driven-development`, { headers });
     assert.equal(tddRes.status, 200);
     const tddData = await tddRes.json();
     assert.match(tddData.content, /NO PRODUCTION CODE WITHOUT A FAILING TEST FIRST/);
 
-    // 4. Expert Roster API returns all 8 seeded experts (incl. 4 medical experts) & supports CRUD
+    const secRefRes = await fetch(`${base}/api/skills/security-and-hardening?file=references/security-checklist.md`, { headers });
+    assert.equal(secRefRes.status, 200);
+    const secRefData = await secRefRes.json();
+    assert.match(secRefData.content, /OWASP|Security/i);
+
+    // 4. Expert Roster API returns all 12 seeded experts (incl. medical + quality/security auditors) & supports CRUD
     const expRes = await fetch(`${base}/api/experts`, { headers });
     assert.equal(expRes.status, 200);
     const expData = await expRes.json();
-    assert.equal(expData.experts.length, 8);
+    assert.equal(expData.experts.length, 12);
     assert.ok(expData.experts.some((e) => e.id === 'senior-dicom-engineer'));
     assert.ok(expData.experts.some((e) => e.id === 'hl7-fhir-engineer'));
     assert.ok(expData.experts.some((e) => e.id === 'anatomical-illustrator'));
     assert.ok(expData.experts.some((e) => e.id === 'human-physiology-expert'));
+    assert.ok(expData.experts.some((e) => e.id === 'security-auditor'));
+    assert.ok(expData.experts.some((e) => e.id === 'web-performance-auditor'));
+    assert.ok(expData.experts.some((e) => e.id === 'accessibility-auditor'));
+    assert.ok(expData.experts.some((e) => e.id === 'test-engineer'));
 
     const addExp = await fetch(`${base}/api/experts`, {
       method: 'POST',

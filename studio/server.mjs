@@ -5,7 +5,7 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 import { createStore } from './lib/store.mjs';
-import { loadSkillCatalog, readSkill } from './lib/skills.mjs';
+import { getDefaultSkillRoots, listSkillPacks, loadSkillCatalog, readSkill } from './lib/skills.mjs';
 import { createWebSocketServer } from './lib/ws.mjs';
 import { listProviderModels, testProviderConnection } from './lib/providers/index.mjs';
 import { getWorkspaceStatus, cleanupSessionWorktree, assessWorkspacePurgeSafety, purgeWorkspaceDirectory } from './lib/worktree.mjs';
@@ -325,7 +325,7 @@ ${helperScript}
 
 export async function createStudioServer({
   dataDir = process.env.SUPERPOWERS_STUDIO_DATA_DIR || path.join(REPO_ROOT, '.superpowers-studio'),
-  skillsRoot = path.join(REPO_ROOT, 'skills'),
+  skillsRoot = getDefaultSkillRoots(REPO_ROOT),
   port = 49500,
   host = '127.0.0.1',
   token,
@@ -598,12 +598,16 @@ export async function createStudioServer({
 
       // ----- Skills -----
       if (pathname === '/api/skills' && method === 'GET') {
-        const skills = loadSkillCatalog(skillsRoot).map(({ name, description, files }) => ({
+        const skills = loadSkillCatalog(skillsRoot).map(({ name, description, files, pack, packLabel, source }) => ({
           name,
           description,
           files,
+          pack,
+          packLabel,
+          source,
         }));
-        return sendJson(res, 200, { skills });
+        const packs = listSkillPacks(skillsRoot);
+        return sendJson(res, 200, { skills, packs });
       }
       m = pathname.match(/^\/api\/skills\/([^/]+)$/);
       if (m && method === 'GET') {

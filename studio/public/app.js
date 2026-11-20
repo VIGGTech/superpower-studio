@@ -2,6 +2,8 @@ const state = {
   providers: [],
   expertsRoster: [],
   skills: [],
+  skillPacks: [],
+  selectedSkillPack: 'all',
   sessions: [],
   defaultWorkspace: '',
   activeSessionId: null,
@@ -275,10 +277,13 @@ async function bootstrap() {
   state.providers = provRes.providers || [];
   state.expertsRoster = expRes.experts || [];
   state.skills = skillRes.skills || [];
+  state.skillPacks = skillRes.packs || [];
   state.defaultWorkspace = setRes.defaultWorkspace || '';
   state.versionInfo = setRes.versionInfo || null;
   state.sessions = sessRes.sessions || [];
   $('#btn-experts').textContent = `Expert Roster (${state.expertsRoster.length})`;
+  const skillsCountEl = $('#skills-count-badge');
+  if (skillsCountEl) skillsCountEl.textContent = String(state.skills.length);
   renderVersionBadges(state.versionInfo);
 
   renderSessionList();
@@ -1200,41 +1205,84 @@ function renderPendingAttachments() {
   });
 }
 
+async function openSkillViewer(skillName, file = 'SKILL.md') {
+  try {
+    const qs = file && file !== 'SKILL.md' ? `?file=${encodeURIComponent(file)}` : '';
+    const data = await api(`/api/skills/${encodeURIComponent(skillName)}${qs}`);
+    const packMeta = data.packLabel ? ` · ${data.packLabel}` : '';
+    $('#viewer-title').textContent = `Skill: ${data.name}${file && file !== 'SKILL.md' ? ` / ${file}` : ''}${packMeta}`;
+    const allFiles = ['SKILL.md', ...(data.files || [])];
+    const tabsHtml = allFiles.length > 1
+      ? `<div class="skill-viewer-files">${allFiles.map((f) => `<button type="button" class="btn btn-xs ${f === (data.file || 'SKILL.md') ? 'btn-primary' : 'btn-ghost'} btn-skill-file" data-file="${escapeHtml(f)}">${escapeHtml(f)}</button>`).join('')}</div>`
+      : '';
+    $('#viewer-body').innerHTML = `${tabsHtml}<pre>${escapeHtml(data.content)}</pre>`;
+    $('#viewer-body').querySelectorAll('.btn-skill-file').forEach((btn) => {
+      btn.addEventListener('click', () => openSkillViewer(skillName, btn.dataset.file));
+    });
+    $('#modal-viewer').classList.remove('hidden');
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
 function renderSkillsTab() {
   const q = ($('#skill-search').value || '').toLowerCase();
   const pinned = new Set(state.activeDetail?.session?.pinnedSkills || []);
-  const filtered = state.skills.filter(
-    (s) => s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q)
-  );
+
+  const filtersEl = $('#skill-pack-filters');
+  if (filtersEl) {
+    if (state.skillPacks.length > 1) {
+      const pills = [
+        { id: 'all', label: `All (${state.skills.length})` },
+        ...state.skillPacks.map((p) => ({ id: p.id, label: `${p.label} (${p.count})` })),
+      ];
+      filtersEl.innerHTML = pills.map((p) => `
+        <button type="button" class="btn btn-xs ${state.selectedSkillPack === p.id ? 'btn-primary' : 'btn-ghost'} btn-skill-pack" data-pack="${escapeHtml(p.id)}">${escapeHtml(p.label)}</button>
+      `).join('');
+      filtersEl.querySelectorAll('.btn-skill-pack').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          state.selectedSkillPack = btn.dataset.pack;
+          renderSkillsTab();
+        });
+      });
+    } else {
+      filtersEl.innerHTML = '';
+    }
+  }
+
+  const filtered = state.skills.filter((s) => {
+    if (state.selectedSkillPack !== 'all' && s.pack !== state.selectedSkillPack) return false;
+    return s.name.toLowerCase().includes(q)
+      || s.description.toLowerCase().includes(q)
+      || (s.packLabel || '').toLowerCase().includes(q);
+  });
   const el = $('#skills-list');
   el.innerHTML = filtered.map((s) => {
     const isPinned = pinned.has(s.name);
+    const packClass = s.pack === 'engineering' ? 'pack-engineering' : 'pack-core';
+    const packBadge = s.packLabel
+      ? `<span class="badge ${packClass}" title="${escapeHtml(s.source || '')}">${escapeHtml(s.pack === 'superpowers' ? 'Core' : s.packLabel)}</span>`
+      : '';
+    const refCount = (s.files || []).length;
+    const refBadge = refCount > 0 ? `<span class="small muted">+${refCount} ref${refCount === 1 ? '' : 's'}</span>` : '';
     return `
       <div class="card-box">
         <div class="card-box-header">
           <span class="card-box-title">${escapeHtml(s.name)}</span>
-          ${isPinned ? '<span class="badge running">pinned</span>' : ''}
+          <span class="skill-badges">${packBadge}${isPinned ? '<span class="badge running">pinned</span>' : ''}</span>
         </div>
         <div class="small muted">${escapeHtml(s.description)}</div>
         <div class="card-box-actions">
           <button class="btn btn-xs btn-secondary btn-view-skill" data-skill="${escapeHtml(s.name)}">Read SKILL.md</button>
           <button class="btn btn-xs ${isPinned ? 'btn-warn' : 'btn-ghost'} btn-pin-skill" data-skill="${escapeHtml(s.name)}">${isPinned ? 'Unpin' : 'Pin to Session'}</button>
           <button class="btn btn-xs btn-primary btn-use-skill" data-skill="${escapeHtml(s.name)}">Use in Chat</button>
+          ${refBadge}
         </div>
       </div>`;
   }).join('');
 
   el.querySelectorAll('.btn-view-skill').forEach((b) => {
-    b.addEventListener('click', async () => {
-      try {
-        const data = await api(`/api/skills/${encodeURIComponent(b.dataset.skill)}`);
-        $('#viewer-title').textContent = `Skill: ${data.name}`;
-        $('#viewer-body').innerHTML = `<pre>${escapeHtml(data.content)}</pre>`;
-        $('#modal-viewer').classList.remove('hidden');
-      } catch (err) {
-        showToast(err.message, 'error');
-      }
-    });
+    b.addEventListener('click', () => openSkillViewer(b.dataset.skill, 'SKILL.md'));
   });
 
   el.querySelectorAll('.btn-pin-skill').forEach((b) => {

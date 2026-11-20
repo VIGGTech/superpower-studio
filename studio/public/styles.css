@@ -748,6 +748,15 @@ legend { font-size: 12px; font-weight: 700; color: var(--accent); padding: 0 6px
 .checkbox-row { display: flex; gap: 16px; flex-wrap: wrap; }
 .inline-check { flex-direction: row !important; align-items: center; gap: 6px !important; color: var(--text) !important; }
 .viewer-body pre { white-space: pre-wrap; background: var(--code-bg); padding: 12px; border-radius: 8px; font-size: 12px; }
+.skills-toolbar { flex-direction: column; align-items: stretch; gap: 6px; }
+.skill-pack-filters { display: flex; gap: 6px; flex-wrap: wrap; }
+.skill-badges { display: inline-flex; gap: 4px; align-items: center; flex-wrap: wrap; }
+.badge.pack-core { background: rgba(0, 113, 227, 0.14); color: var(--accent); }
+.badge.pack-engineering { background: rgba(139, 92, 246, 0.16); color: #7c3aed; }
+@media (prefers-color-scheme: dark) {
+  .badge.pack-engineering { background: rgba(167, 139, 250, 0.18); color: #c4b5fd; }
+}
+.skill-viewer-files { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
 .lightbox-img { max-width: 100%; max-height: 75vh; object-fit: contain; border-radius: 8px; margin: 0 auto; display: block; }
 .mobile-qr-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
 .mobile-qr-box {

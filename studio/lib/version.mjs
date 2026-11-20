@@ -19,6 +19,15 @@ const FALLBACK = {
     author: 'Jesse Vincent',
     license: 'MIT',
   },
+  attributions: [
+    {
+      name: 'addyosmani/agent-skills',
+      url: 'https://github.com/addyosmani/agent-skills',
+      author: 'Addy Osmani',
+      license: 'MIT',
+      scope: 'Engineering Pack (8 curated skills + checklists) and 4 Quality & Security expert personas',
+    },
+  ],
 };
 
 export function getVersionInfo() {
@@ -28,6 +37,7 @@ export function getVersionInfo() {
       ...FALLBACK,
       ...raw,
       upstream: { ...FALLBACK.upstream, ...(raw?.upstream || {}) },
+      attributions: Array.isArray(raw?.attributions) ? raw.attributions : FALLBACK.attributions,
     };
   } catch {
     return structuredClone(FALLBACK);

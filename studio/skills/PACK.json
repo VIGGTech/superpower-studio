@@ -1,0 +1,19 @@
+{
+  "id": "engineering",
+  "label": "Engineering Pack",
+  "source": "addyosmani/agent-skills",
+  "url": "https://github.com/addyosmani/agent-skills",
+  "commit": "8c99fa36d90068c82d547f7c12a9d67a3e95f4ee",
+  "license": "MIT",
+  "attribution": "Copyright (c) 2025 Addy Osmani",
+  "skills": [
+    "security-and-hardening",
+    "api-and-interface-design",
+    "frontend-ui-engineering",
+    "code-simplification",
+    "doubt-driven-development",
+    "constraint-driven-development",
+    "performance-optimization",
+    "accessibility-engineering"
+  ]
+}

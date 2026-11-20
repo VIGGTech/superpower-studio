@@ -33,27 +33,126 @@ function listSupportingFiles(skillDir, relBase = '') {
   return out.sort();
 }
 
-export function loadSkillCatalog(skillsRoot) {
-  if (!skillsRoot || !fs.existsSync(skillsRoot)) return [];
-  const entries = fs.readdirSync(skillsRoot, { withFileTypes: true });
-  const skills = [];
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
-    const dir = path.join(skillsRoot, entry.name);
-    const skillFile = path.join(dir, 'SKILL.md');
-    if (!fs.existsSync(skillFile)) continue;
-    const raw = fs.readFileSync(skillFile, 'utf8');
-    const { meta } = parseFrontmatter(raw);
-    skills.push({
-      name: meta.name || entry.name,
-      dirName: entry.name,
-      description: meta.description || '',
-      dir,
-      skillFile,
-      files: listSupportingFiles(dir),
+function readPackMeta(dir, fallback = {}) {
+  const metaFile = path.join(dir, 'PACK.json');
+  if (fs.existsSync(metaFile)) {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(metaFile, 'utf8'));
+      return {
+        pack: parsed.id || fallback.pack || 'custom',
+        packLabel: parsed.label || fallback.packLabel || 'Custom Pack',
+        source: parsed.source || fallback.source || '',
+      };
+    } catch { /* fall through */ }
+  }
+  return {
+    pack: fallback.pack || 'superpowers',
+    packLabel: fallback.packLabel || 'Superpowers Core',
+    source: fallback.source || 'obra/superpowers',
+  };
+}
+
+export function getDefaultSkillRoots(repoRoot) {
+  const roots = [
+    {
+      dir: path.join(repoRoot, 'skills'),
+      pack: 'superpowers',
+      packLabel: 'Superpowers Core',
+      source: 'obra/superpowers',
+    },
+  ];
+  const studioSkillsDir = path.join(repoRoot, 'studio', 'skills');
+  if (fs.existsSync(studioSkillsDir)) {
+    roots.push({
+      dir: studioSkillsDir,
+      ...readPackMeta(studioSkillsDir, {
+        pack: 'engineering',
+        packLabel: 'Engineering Pack',
+        source: 'addyosmani/agent-skills',
+      }),
     });
   }
+  return roots;
+}
+
+export function normalizeSkillRoots(skillsRoot) {
+  if (!skillsRoot) return [];
+  const rawList = Array.isArray(skillsRoot) ? skillsRoot : [skillsRoot];
+  const out = [];
+  for (const item of rawList) {
+    if (!item) continue;
+    if (typeof item === 'string') {
+      out.push({
+        dir: item,
+        ...readPackMeta(item),
+      });
+    } else if (typeof item === 'object' && item.dir) {
+      out.push({
+        dir: item.dir,
+        ...readPackMeta(item.dir, item),
+      });
+    }
+  }
+  return out;
+}
+
+export function loadSkillCatalog(skillsRoot) {
+  const roots = normalizeSkillRoots(skillsRoot);
+  const seenNames = new Set();
+  const skills = [];
+  for (const root of roots) {
+    if (!root.dir || !fs.existsSync(root.dir)) continue;
+    const entries = fs.readdirSync(root.dir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const dir = path.join(root.dir, entry.name);
+      const skillFile = path.join(dir, 'SKILL.md');
+      if (!fs.existsSync(skillFile)) continue;
+      const raw = fs.readFileSync(skillFile, 'utf8');
+      const { meta } = parseFrontmatter(raw);
+      const name = meta.name || entry.name;
+      // Earlier roots (e.g. Superpowers Core) take precedence and cannot be shadowed
+      if (seenNames.has(name)) continue;
+      seenNames.add(name);
+      skills.push({
+        name,
+        dirName: entry.name,
+        description: meta.description || '',
+        pack: root.pack,
+        packLabel: root.packLabel,
+        source: root.source,
+        dir,
+        skillFile,
+        files: listSupportingFiles(dir),
+      });
+    }
+  }
   return skills.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export function listSkillPacks(skillsRoot) {
+  const roots = normalizeSkillRoots(skillsRoot);
+  const catalog = loadSkillCatalog(skillsRoot);
+  const counts = new Map();
+  for (const s of catalog) {
+    counts.set(s.pack, (counts.get(s.pack) || 0) + 1);
+  }
+  const seen = new Set();
+  const packs = [];
+  for (const root of roots) {
+    if (seen.has(root.pack)) continue;
+    seen.add(root.pack);
+    const count = counts.get(root.pack) || 0;
+    if (count > 0) {
+      packs.push({
+        id: root.pack,
+        label: root.packLabel,
+        source: root.source,
+        count,
+      });
+    }
+  }
+  return packs;
 }
 
 export function readSkill(skillsRoot, name, relativeFile = 'SKILL.md') {
@@ -74,6 +173,9 @@ export function readSkill(skillsRoot, name, relativeFile = 'SKILL.md') {
   return {
     name: found.name,
     description: found.description,
+    pack: found.pack,
+    packLabel: found.packLabel,
+    source: found.source,
     file: relativeFile || 'SKILL.md',
     content,
     files: found.files,
@@ -148,10 +250,24 @@ Workspace: \`${effectiveWorkDir}\` | Shell: \`${shellName}\`
   }
 
   if (catalog.length > 0) {
-    const indexLines = catalog.map((s) => `- **${s.name}**: ${s.description}`);
-    sections.push(
-      `# Available Superpowers Skills (${catalog.length} live skills — call \`load_skill({ name })\` to read)\n${indexLines.join('\n')}`
-    );
+    const packs = listSkillPacks(skillsRoot);
+    if (packs.length > 1) {
+      const grouped = packs.map((p) => {
+        const items = catalog
+          .filter((s) => s.pack === p.id)
+          .map((s) => `- **${s.name}**: ${s.description}`);
+        const src = p.source ? ` — ${p.source}` : '';
+        return `## ${p.label} (${items.length}${src})\n${items.join('\n')}`;
+      });
+      sections.push(
+        `# Available Skills (${catalog.length} live skills across ${packs.length} packs — call \`load_skill({ name })\` or \`load_skill({ name, file })\` to read)\n${grouped.join('\n\n')}`
+      );
+    } else {
+      const indexLines = catalog.map((s) => `- **${s.name}**: ${s.description}`);
+      sections.push(
+        `# Available Superpowers Skills (${catalog.length} live skills — call \`load_skill({ name })\` to read)\n${indexLines.join('\n')}`
+      );
+    }
   }
 
   if (tier === 'coordinator' && expertRoster && expertRoster.length > 0) {

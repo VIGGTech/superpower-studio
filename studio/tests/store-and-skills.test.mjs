@@ -6,7 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { createStore } from '../lib/store.mjs';
-import { loadSkillCatalog, readSkill, buildBootstrapPrompt } from '../lib/skills.mjs';
+import { getDefaultSkillRoots, listSkillPacks, loadSkillCatalog, readSkill, buildBootstrapPrompt } from '../lib/skills.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
@@ -58,6 +58,78 @@ test('readSkill reads SKILL.md, supporting files, and blocks path traversal', ()
   assert.equal(readSkill(SKILLS_ROOT, 'does-not-exist'), null);
 });
 
+test('multi-pack skill roots load 15 Superpowers Core + 8 Engineering Pack skills with core priority & self-contained checklists', () => {
+  const roots = getDefaultSkillRoots(REPO_ROOT);
+  const catalog = loadSkillCatalog(roots);
+  const packs = listSkillPacks(roots);
+  assert.equal(catalog.length, 23, `expected 23 skills across packs, got ${catalog.length}`);
+  assert.equal(packs.length, 2);
+  assert.deepEqual(
+    packs.map((p) => ({ id: p.id, count: p.count })),
+    [
+      { id: 'superpowers', count: 15 },
+      { id: 'engineering', count: 8 },
+    ]
+  );
+
+  // Verify all 8 curated engineering skills exist & have no broken ../../references/ links
+  const engNames = [
+    'security-and-hardening',
+    'api-and-interface-design',
+    'frontend-ui-engineering',
+    'code-simplification',
+    'doubt-driven-development',
+    'constraint-driven-development',
+    'performance-optimization',
+    'accessibility-engineering',
+  ];
+  for (const name of engNames) {
+    const loaded = readSkill(roots, name);
+    assert.ok(loaded, `missing engineering skill: ${name}`);
+    assert.equal(loaded.pack, 'engineering');
+    assert.ok(!/\.\.\/\.\.\/references\//.test(loaded.content), `broken parent reference link in ${name}`);
+  }
+
+  // Self-contained bundled checklists read cleanly inside skill root
+  const secChecklist = readSkill(roots, 'security-and-hardening', 'references/security-checklist.md');
+  assert.ok(secChecklist && secChecklist.content.length > 100);
+  const perfChecklist = readSkill(roots, 'performance-optimization', 'references/performance-checklist.md');
+  assert.ok(perfChecklist && perfChecklist.content.length > 100);
+  const a11yChecklist = readSkill(roots, 'accessibility-engineering', 'references/accessibility-checklist.md');
+  assert.ok(a11yChecklist && a11yChecklist.content.length > 100);
+  const orchPatterns = readSkill(roots, 'doubt-driven-development', 'references/orchestration-patterns.md');
+  assert.ok(orchPatterns && orchPatterns.content.length > 100);
+
+  // Earlier root (Superpowers Core) cannot be shadowed on name collision
+  const fakePack = makeTempDir();
+  try {
+    const dupDir = path.join(fakePack, 'test-driven-development');
+    fs.mkdirSync(dupDir, { recursive: true });
+    fs.writeFileSync(path.join(dupDir, 'SKILL.md'), '---\nname: test-driven-development\ndescription: Hijack\n---\nHIJACKED', 'utf8');
+    const merged = loadSkillCatalog([
+      { dir: SKILLS_ROOT, pack: 'superpowers', packLabel: 'Superpowers Core' },
+      { dir: fakePack, pack: 'custom', packLabel: 'Custom' },
+    ]);
+    const tdd = readSkill([SKILLS_ROOT, fakePack], 'test-driven-development');
+    assert.equal(merged.filter((s) => s.name === 'test-driven-development').length, 1);
+    assert.match(tdd.content, /NO PRODUCTION CODE WITHOUT A FAILING TEST FIRST/);
+  } finally {
+    fs.rmSync(fakePack, { recursive: true, force: true });
+  }
+
+  // Bootstrap prompt groups both packs while keeping using-superpowers as single router
+  const prompt = buildBootstrapPrompt({
+    skillsRoot: roots,
+    tier: 'coordinator',
+    phase: 'running',
+    effectiveWorkDir: '/repo',
+  });
+  assert.match(prompt, /Superpowers Core \(15/);
+  assert.match(prompt, /Engineering Pack \(8/);
+  assert.match(prompt, /security-and-hardening/);
+  assert.match(prompt, /doubt-driven-development/);
+});
+
 test('buildBootstrapPrompt adapts by tier, includes all 15 skills, pins rules/plan & pinned skills', () => {
   const subPrompt = buildBootstrapPrompt({
     skillsRoot: SKILLS_ROOT,
@@ -96,7 +168,7 @@ test('buildBootstrapPrompt adapts by tier, includes all 15 skills, pins rules/pl
   assert.match(coordPrompt, /report_complete/);
 });
 
-test('createStore seeds 7 providers, 8 experts (incl. 4 medical experts), masks keys, and resolves env vars', () => {
+test('createStore seeds 7 providers, 12 experts (incl. 4 medical + 4 quality/security auditors), masks keys, and merges new defaults non-destructively', () => {
   const dir = makeTempDir();
   const prevAblit = process.env.ABLIT_KEY;
   process.env.ABLIT_KEY = 'ak_test_secret_9999';
@@ -116,7 +188,7 @@ test('createStore seeds 7 providers, 8 experts (incl. 4 medical experts), masks 
     assert.ok(!JSON.stringify(masked).includes('ak_test_secret_9999'));
 
     const roster = store.getExpertRoster();
-    assert.equal(roster.length, 8);
+    assert.equal(roster.length, 12);
     for (const id of [
       'senior-dicom-engineer',
       'hl7-fhir-engineer',
@@ -126,11 +198,37 @@ test('createStore seeds 7 providers, 8 experts (incl. 4 medical experts), masks 
       'code-reviewer',
       'debugger',
       'researcher',
+      'security-auditor',
+      'web-performance-auditor',
+      'accessibility-auditor',
+      'test-engineer',
     ]) {
       assert.ok(roster.some((e) => e.id === id), `missing expert: ${id}`);
     }
     const illustrator = roster.find((e) => e.id === 'anatomical-illustrator');
     assert.equal(illustrator.allowVisualCompanion, true);
+
+    // Deleting a default expert persists dismissal across reloads (never resurrected)
+    assert.equal(store.deleteExpertProfile('accessibility-auditor'), true);
+    const storeAfterDelete = createStore({ dataDir: dir });
+    assert.equal(storeAfterDelete.getExpertRoster().some((e) => e.id === 'accessibility-auditor'), false);
+
+    // Simulate legacy install with only 1 custom-edited expert: reload appends missing non-dismissed defaults without overwriting custom edit
+    const legacyDir = makeTempDir();
+    try {
+      fs.writeFileSync(
+        path.join(legacyDir, 'experts.json'),
+        JSON.stringify([{ id: 'implementer', name: 'My Custom Implementer', specialty: 'Custom' }], null, 2),
+        'utf8'
+      );
+      const upgraded = createStore({ dataDir: legacyDir });
+      const upgradedRoster = upgraded.getExpertRoster();
+      assert.equal(upgradedRoster.length, 12);
+      assert.equal(upgradedRoster.find((e) => e.id === 'implementer').name, 'My Custom Implementer');
+      assert.ok(upgradedRoster.some((e) => e.id === 'security-auditor'));
+    } finally {
+      fs.rmSync(legacyDir, { recursive: true, force: true });
+    }
   } finally {
     if (prevAblit === undefined) delete process.env.ABLIT_KEY;
     else process.env.ABLIT_KEY = prevAblit;

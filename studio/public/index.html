@@ -157,7 +157,7 @@
       <nav class="inspector-tabs">
         <button class="tab-btn active" data-tab="coordinator" id="tab-btn-agents">Agents <span id="agents-count-badge" class="tab-pill">0</span></button>
         <button class="tab-btn" data-tab="companion">Visual</button>
-        <button class="tab-btn" data-tab="skills">Skills (15)</button>
+        <button class="tab-btn" data-tab="skills" id="tab-btn-skills">Skills <span id="skills-count-badge" class="tab-pill">23</span></button>
         <button class="tab-btn" data-tab="workspace">Workspace</button>
       </nav>
 
@@ -191,10 +191,11 @@
         </div>
       </div>
 
-      <!-- Tab 3: All 15 Live Superpowers Skills -->
+      <!-- Tab 3: Live Skills (Superpowers Core + Engineering Pack) -->
       <div id="tab-skills" class="tab-panel">
-        <div class="panel-toolbar">
-          <input id="skill-search" type="search" placeholder="Filter 15 Superpowers skills…">
+        <div class="panel-toolbar skills-toolbar">
+          <input id="skill-search" type="search" placeholder="Filter skills &amp; checklists…">
+          <div id="skill-pack-filters" class="skill-pack-filters"></div>
         </div>
         <div id="skills-list" class="inspector-scroll"></div>
       </div>

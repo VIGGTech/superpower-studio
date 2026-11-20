@@ -194,6 +194,63 @@ export const DEFAULT_EXPERTS = [
     model: '',
     systemPrompt: `You are a Technical Researcher. Explore the workspace thoroughly using read-only tools and return a well-structured, evidence-backed summary with exact file paths and symbol names.`,
   },
+  {
+    id: 'security-auditor',
+    name: 'Security Auditor',
+    category: 'Quality & Security',
+    specialty: 'STRIDE threat modeling, OWASP Top 10 & LLM Top 10 vulnerability auditing, auth/IDOR checks, secrets & dependency supply-chain review (read-only).',
+    readOnly: true,
+    allowVisualCompanion: false,
+    providerId: '',
+    model: '',
+    systemPrompt: `You are an experienced Security Engineer conducting a practical, exploitability-focused security audit (load the \`security-and-hardening\` skill and its \`references/security-checklist.md\` when helpful).
+- Start from trust boundaries (HTTP inputs, uploads, webhooks, third-party APIs, file paths, shell arguments, and LLM outputs) and reason with STRIDE before listing findings.
+- Audit input validation & injection (SQL/NoSQL/OS/XSS/path traversal/SSRF), authentication & authorization (IDOR, session flags, rate limits), secrets & PII handling, security headers/CORS, and dependency/supply-chain risk.
+- Rank every finding by severity (Critical / High / Medium / Low) with exact file:line citations, exploit scenario or proof of concept, and a concrete fix — never suggest disabling security controls as a fix.
+- Also acknowledge security practices done well.`,
+  },
+  {
+    id: 'web-performance-auditor',
+    name: 'Web Performance Auditor',
+    category: 'Quality & Security',
+    specialty: 'Core Web Vitals (LCP/INP/CLS), bundle/rendering/network bottleneck analysis, and measure-first profiling with strict metric honesty (read-only).',
+    readOnly: true,
+    allowVisualCompanion: false,
+    providerId: '',
+    model: '',
+    systemPrompt: `You are a Web Performance Engineer auditing loading, rendering, and runtime efficiency (load the \`performance-optimization\` skill and its \`references/performance-checklist.md\` when helpful).
+- Apply strict metric honesty: if you only inspect source code (Quick mode), tag findings as **potential impact** and never fabricate benchmark numbers; if live measurements, Lighthouse/trace JSON, or profiling outputs are available (Deep mode), cite the exact measured numbers.
+- Check Core Web Vitals risks (LCP render-blocking assets, unoptimized images/missing dimensions for CLS, main-thread long tasks for INP), bundle bloat, unnecessary re-renders, N+1 queries, and unbounded fetches.
+- Prioritize findings by user impact with file:line citations and concrete measurement commands to verify each fix.`,
+  },
+  {
+    id: 'accessibility-auditor',
+    name: 'Accessibility Auditor',
+    category: 'Quality & Security',
+    specialty: 'WCAG 2.2 AA conformance audits, semantic HTML/ARIA, keyboard & focus management, color contrast, and screen-reader verification guidance (read-only).',
+    readOnly: true,
+    allowVisualCompanion: false,
+    providerId: '',
+    model: '',
+    systemPrompt: `You are an Accessibility Engineer auditing interfaces for WCAG 2.2 Level AA conformance (load the \`accessibility-engineering\` skill and its \`references/accessibility-checklist.md\` when helpful).
+- Map every violation to its exact WCAG 2.2 Success Criterion (distinguishing hard violations from UX recommendations) and rank by real user impact (Critical / Serious / Moderate / Minor).
+- Check keyboard navigation, visible focus indicators (never remove outlines or use tabindex > 0), semantic landmarks/headings, form labels & error announcements, ARIA roles/states, contrast ratios (4.5:1 normal text, 3:1 large text & UI components), and AI-generated UI anti-patterns.
+- Be honest about automated vs manual verification: code inspection cannot confirm screen-reader announcements — tag assistive-technology checks as \`manual\` with exact reproduction steps and expected behavior.`,
+  },
+  {
+    id: 'test-engineer',
+    name: 'QA & Test Engineer',
+    category: 'Quality & Security',
+    specialty: 'Test strategy, coverage gap analysis, Prove-It failing bug reproductions, unit/integration/E2E tests, and edge-case/concurrency testing.',
+    readOnly: false,
+    allowVisualCompanion: false,
+    providerId: '',
+    model: '',
+    systemPrompt: `You are an experienced QA & Test Engineer focused on test strategy, coverage analysis, and high-signal automated tests.
+- Test at the lowest level that captures real behavior (Unit for pure logic, Integration across boundaries, E2E for critical user flows) and test behavior rather than implementation details.
+- For bugs, follow the Prove-It pattern: write a failing reproduction test first, confirm it fails for the right reason, then verify the fix makes it pass.
+- Cover happy paths, empty/null inputs, boundary values, error paths, and concurrency/race conditions; keep tests isolated with no shared mutable state, mock only at system boundaries, and report exact test command outputs.`,
+  },
 ];
 
 function ensureDir(dir) {
@@ -267,11 +324,24 @@ export function createStore({ dataDir }) {
   if (!fs.existsSync(providersFile)) {
     atomicWriteJson(providersFile, DEFAULT_PROVIDERS, 0o600);
   }
-  if (!fs.existsSync(expertsFile)) {
-    atomicWriteJson(expertsFile, DEFAULT_EXPERTS);
-  }
   if (!fs.existsSync(settingsFile)) {
     atomicWriteJson(settingsFile, { shell: 'auto', autoResumeOnRestart: true });
+  }
+  if (!fs.existsSync(expertsFile)) {
+    atomicWriteJson(expertsFile, DEFAULT_EXPERTS);
+  } else {
+    // Non-destructive upgrade: append any newly introduced built-in experts
+    // that are neither present nor explicitly deleted by the user.
+    const existingList = readJsonSafe(expertsFile, null);
+    if (Array.isArray(existingList)) {
+      const existingIds = new Set(existingList.map((e) => e?.id).filter(Boolean));
+      const rawSettings = readJsonSafe(settingsFile, {});
+      const dismissed = new Set(Array.isArray(rawSettings?.dismissedDefaultExperts) ? rawSettings.dismissedDefaultExperts : []);
+      const toAppend = DEFAULT_EXPERTS.filter((d) => !existingIds.has(d.id) && !dismissed.has(d.id));
+      if (toAppend.length > 0) {
+        atomicWriteJson(expertsFile, [...existingList, ...structuredClone(toAppend)]);
+      }
+    }
   }
 
   function sessionDir(id) {
@@ -377,6 +447,14 @@ export function createStore({ dataDir }) {
     if (idx >= 0) list[idx] = merged;
     else list.push(merged);
     atomicWriteJson(expertsFile, list);
+    // If re-adding a previously dismissed default expert, clear its dismissal
+    const curSettings = readJsonSafe(settingsFile, {});
+    if (Array.isArray(curSettings?.dismissedDefaultExperts) && curSettings.dismissedDefaultExperts.includes(cleanId)) {
+      atomicWriteJson(settingsFile, {
+        ...curSettings,
+        dismissedDefaultExperts: curSettings.dismissedDefaultExperts.filter((x) => x !== cleanId),
+      });
+    }
     return merged;
   }
 
@@ -385,6 +463,12 @@ export function createStore({ dataDir }) {
     const next = list.filter((e) => e.id !== id);
     if (next.length === list.length) return false;
     atomicWriteJson(expertsFile, next);
+    if (DEFAULT_EXPERTS.some((d) => d.id === id)) {
+      const curSettings = readJsonSafe(settingsFile, {});
+      const dismissed = new Set(Array.isArray(curSettings?.dismissedDefaultExperts) ? curSettings.dismissedDefaultExperts : []);
+      dismissed.add(id);
+      atomicWriteJson(settingsFile, { ...curSettings, dismissedDefaultExperts: [...dismissed] });
+    }
     return true;
   }
 

@@ -142,7 +142,7 @@ export function buildGettingStartedHtml({ version = DEFAULT_VERSION, versionInfo
 
     <div class="footer">
       <strong>Superpowers Studio &mdash; ${escapeXml(edition)} v${escapeXml(version)}</strong> (Open Source &middot; MIT License) &middot; <a href="${escapeXml(versionInfo.repository || 'https://github.com/VIGGTech/superpower-studio')}" target="_blank" rel="noopener noreferrer">GitHub Repository</a><br>
-      Derived from <a href="${escapeXml(upstreamUrl)}" target="_blank" rel="noopener noreferrer">${escapeXml(upstreamUrl)}</a> v${escapeXml(upstreamVer)} (Copyright &copy; 2025 ${escapeXml(upstreamAuthor)}, MIT License)<br>
+      Derived from <a href="${escapeXml(upstreamUrl)}" target="_blank" rel="noopener noreferrer">${escapeXml(upstreamUrl)}</a> v${escapeXml(upstreamVer)} (Copyright &copy; 2025 ${escapeXml(upstreamAuthor)}, MIT License) &middot; Engineering Pack skills &amp; auditor personas adapted from <a href="https://github.com/addyosmani/agent-skills" target="_blank" rel="noopener noreferrer">addyosmani/agent-skills</a> (Copyright &copy; 2025 Addy Osmani, MIT License)<br>
       Data stored in <code>%LOCALAPPDATA%\\SuperpowersStudio</code> &middot; Uninstall anytime via Windows Settings &rarr; Installed Apps
     </div>
   </div>
@@ -160,10 +160,10 @@ function buildLicenseRtf({ version = DEFAULT_VERSION, versionInfo = getVersionIn
     '{\\rtf1\\ansi\\deff0',
     '{\\fonttbl{\\f0 Segoe UI;}}',
     `\\fs20\\b Superpowers Studio (${edition} v${version}) — Open Source (MIT License)\\b0\\par\\par`,
-    `This VIGGTech open-source edition of Superpowers Studio is derived from obra/superpowers v${upstreamVer} (${upstreamUrl}), Copyright (c) 2025 ${upstreamAuthor}, licensed under the MIT License.\\par\\par`,
+    `This VIGGTech open-source edition of Superpowers Studio is derived from obra/superpowers v${upstreamVer} (${upstreamUrl}), Copyright (c) 2025 ${upstreamAuthor}, licensed under the MIT License. Engineering Pack skills and Quality/Security auditor personas are adapted from addyosmani/agent-skills (https://github.com/addyosmani/agent-skills), Copyright (c) 2025 Addy Osmani, licensed under the MIT License.\\par\\par`,
     '\\b What gets installed:\\b0\\par',
     '- Superpowers Studio (VIGGTech Edition) + bundled Node.js v20 runtime in %LOCALAPPDATA%\\Programs\\SuperpowersStudio (no admin rights required)\\par',
-    '- All 15 Superpowers workflow skills + full MIT LICENSE & NOTICE attribution\\par',
+    '- All 15 Superpowers Core workflow skills + 8 Engineering Pack skills (23 live skills) + 12 Specialist Experts + full MIT LICENSE & NOTICE attribution\\par',
     '- Desktop & Start Menu shortcuts + Getting Started Guide\\par\\par',
     '\\b After installation:\\b0\\par',
     '1. Open Superpowers Studio and click "1. Configure API Keys" (or "Providers & Models") to add your own API keys (Anthropic, Gemini, DeepSeek, Qwen, OpenRouter, Abliteration.ai, or local Ollama).\\par',
@@ -186,6 +186,13 @@ function buildNoticeTxt({ version = DEFAULT_VERSION, versionInfo = getVersionInf
     `Derived from obra/superpowers v${upstreamVer}`,
     `Repository: ${upstreamUrl}`,
     `Original Author: Copyright (c) 2025 ${upstreamAuthor}`,
+    'Original License: MIT License (see LICENSE file included alongside this notice)',
+    '',
+    'Additional Third-Party Open-Source Attribution:',
+    'Engineering Pack skills (studio/skills/) and Quality & Security auditor personas',
+    'Adapted from addyosmani/agent-skills',
+    'Repository: https://github.com/addyosmani/agent-skills',
+    'Original Author: Copyright (c) 2025 Addy Osmani',
     'Original License: MIT License (see LICENSE file included alongside this notice)',
     '',
   ].join('\r\n');
@@ -290,6 +297,11 @@ export function stagePackageFiles({
   fs.writeFileSync(path.join(studioDst, 'version.json'), JSON.stringify(versionInfo, null, 2) + '\n', 'utf8');
   copyTreeFiltered(path.join(studioSrc, 'lib'), path.join(studioDst, 'lib'));
   copyTreeFiltered(path.join(studioSrc, 'public'), path.join(studioDst, 'public'));
+  if (fs.existsSync(path.join(studioSrc, 'skills'))) {
+    copyTreeFiltered(path.join(studioSrc, 'skills'), path.join(studioDst, 'skills'), {
+      skipNames: new Set(['.git', 'node_modules', '.DS_Store']),
+    });
+  }
 
   // 3. All 15 live Superpowers skills (strictly read-only copy) + upstream MIT LICENSE + VIGGTech NOTICE
   copyTreeFiltered(path.join(repoRoot, 'skills'), skillsDst, {

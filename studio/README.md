@@ -4,7 +4,7 @@
 >
 > **Repository:** https://github.com/VIGGTech/superpower-studio · **Windows Installer:** [Releases](https://github.com/VIGGTech/superpower-studio/releases)
 
-Superpowers Studio is a **zero-runtime-dependency Node.js** multi-provider autonomous agent environment that pairs a local web dashboard with all **15 live Superpowers skills** (`skills/*/SKILL.md`). It lets you run one or more parallel autonomous coding, research, and visual-production sessions using any combination of AI providers.
+Superpowers Studio is a **zero-runtime-dependency Node.js** multi-provider autonomous agent environment that pairs a local web dashboard with **23 live skills** across two modular packs (**15 Superpowers Core workflow skills** in `skills/` + **8 curated Engineering Pack skills** in `studio/skills/` with bundled checklists) and **12 built-in Specialist Experts**. It lets you run one or more parallel autonomous coding, security/performance auditing, research, and visual-production sessions using any combination of AI providers.
 
 ---
 
@@ -38,11 +38,12 @@ Superpowers Studio is a **zero-runtime-dependency Node.js** multi-provider auton
                ▼                             ▼
 ┌──────────────────────────────┐  ┌───────────────────────────────────────┐
 │  TIER 3: SPECIALIST EXPERTS  │  │  TIER 3: SPECIALIST EXPERTS           │
-│  • Software Implementer      │  │  • Senior DICOM Engineer              │
-│  • Code Reviewer (read-only) │  │  • HL7 / FHIR Engineer                │
-│  • Systematic Debugger       │  │  • Anatomical Illustrator             │
-│  • Codebase Researcher       │  │  • Human Physiology Expert            │
-│  • + Your Custom Experts     │  │  (All inherit locked Session Rules!)  │
+│  • Software Implementer      │  │  • Security Auditor (read-only)       │
+│  • Code Reviewer (read-only) │  │  • Web Performance Auditor (r/o)      │
+│  • Systematic Debugger       │  │  • Accessibility Auditor (read-only)  │
+│  • Technical Researcher      │  │  • QA & Test Engineer                 │
+│  • + Medical & Imaging (4)   │  │  • + Your Custom Experts              │
+│  (All inherit locked Rules!) │  │  (Parallel fan-out via spawn_expert)  │
 └──────────────────────────────┘  └───────────────────────────────────────┘
 ```
 
@@ -51,7 +52,10 @@ Superpowers Studio is a **zero-runtime-dependency Node.js** multi-provider auton
   - Bypasses arbitrary turn limits so long multi-hour builds don't pause prematurely.
   - **100% Goal-Completion Gate:** Rejects premature `report_complete` calls if any Mission Board task is still `pending`, `in_progress`, or `blocked`.
   - **Autonomous Watchdog Recovery:** Detects stalled loops (3 consecutive text-only turns, 5 consecutive identical tool errors, or transient API errors), wakes the Subordinate to diagnose and relay a recovery directive, and restarts the Coordinator automatically.
-- **All 15 Live Superpowers Skills:** Reads `skills/*/SKILL.md` directly on disk (`brainstorming`, `writing-plans`, `test-driven-development`, `systematic-debugging`, `subagent-driven-development`, `verification-before-completion`, etc.). Trigger any skill with `/skill-name` in chat or pin it for a session in the **Skills (15)** tab.
+- **23 Live Skills (Multi-Pack Architecture, Single Router):**
+  - **Superpowers Core (15 skills in `skills/`):** `brainstorming`, `writing-plans`, `test-driven-development`, `systematic-debugging`, `subagent-driven-development`, `verification-before-completion`, etc. — with `using-superpowers` kept as the single active router.
+  - **Engineering Pack (8 curated skills in `studio/skills/`, adapted from `addyosmani/agent-skills`):** `security-and-hardening`, `api-and-interface-design`, `frontend-ui-engineering`, `code-simplification`, `doubt-driven-development`, `constraint-driven-development`, `performance-optimization`, and `accessibility-engineering` — each bundled with self-contained `references/` checklists.
+  - Trigger any skill with `/skill-name` in chat, filter by pack in the **Skills** tab, inspect bundled checklists, or pin skills per session.
 - **Automatic Git Worktree Isolation:** When two sessions target the same Git repository concurrently, Studio automatically creates an isolated `git worktree` branch (`superpowers/<session-id>`) so agents never overwrite each other's files.
 - **Multimodal Vision & Visual Companion:**
   - Paste (`Ctrl+V`), drag-and-drop, or upload reference images (`+ Image`) — translated across OpenAI-compatible, Anthropic, and Gemini APIs (with automatic per-request image-budget capping and text-only fallback).
@@ -143,7 +147,7 @@ node studio/daemon.mjs install-shortcuts    # Create Windows Desktop & Start Men
 node studio/daemon.mjs uninstall-shortcuts  # Remove Windows Desktop & Start Menu icons
 
 # Testing & Windows MSI Packaging
-node --test studio/tests                    # Run full Studio test suite (54 tests)
+node --test studio/tests                    # Run full Studio test suite
 node studio/packaging/build-msi.mjs         # Build self-contained x64 .msi (requires WiX v5)
 ```
 
@@ -157,4 +161,5 @@ node studio/packaging/build-msi.mjs         # Build self-contained x64 .msi (req
 
 ## Open-Source License & Attribution
 Released under the **MIT License** — see [LICENSE](../LICENSE) and [NOTICE.txt](../NOTICE.txt).
-Derived from **[obra/superpowers](https://github.com/obra/superpowers) v7.0.2** (Copyright © 2025 Jesse Vincent, MIT License).
+- Derived from **[obra/superpowers](https://github.com/obra/superpowers) v7.0.2** (Copyright © 2025 Jesse Vincent, MIT License).
+- Engineering Pack skills (`studio/skills/`) and Quality & Security auditor personas adapted from **[addyosmani/agent-skills](https://github.com/addyosmani/agent-skills)** (Copyright © 2025 Addy Osmani, MIT License).
