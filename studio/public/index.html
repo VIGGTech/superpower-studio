@@ -304,6 +304,8 @@
         </div>
         <div class="small muted">Changes apply immediately on the very next Subordinate, Coordinator, or Expert turn.</div>
         <div class="modal-footer">
+          <button type="button" id="btn-open-delete-session" class="btn btn-danger btn-sm">Delete / Purge Session…</button>
+          <div style="flex:1"></div>
           <button type="button" class="btn btn-ghost modal-close" data-close="modal-session-settings">Cancel</button>
           <button type="submit" class="btn btn-primary">Save Settings</button>
         </div>
@@ -537,6 +539,51 @@ node studio/daemon.mjs stop</pre>
         <button class="btn-icon modal-close" data-close="modal-viewer">&times;</button>
       </div>
       <div id="viewer-body" class="modal-body viewer-body"></div>
+    </div>
+  </div>
+
+  <!-- Modal: Delete / Purge Session -->
+  <div id="modal-delete-session" class="modal hidden">
+    <div class="modal-card" style="width:min(520px,100%)">
+      <div class="modal-header">
+        <h2 id="del-session-heading">Delete / Purge Session</h2>
+        <button class="btn-icon modal-close" data-close="modal-delete-session">&times;</button>
+      </div>
+      <div class="modal-body" style="display:flex;flex-direction:column;gap:10px">
+        <div id="del-session-summary" class="small"></div>
+
+        <div class="card-box">
+          <div class="small"><strong>Always removed:</strong> Session chat history, Coordinator trace, Expert transcripts, attachments, and Visual Companion screens.</div>
+        </div>
+
+        <div id="del-worktree-box" class="card-box hidden">
+          <div class="small" style="margin-bottom:6px">
+            <strong>Isolated Worktree:</strong><br>
+            <code id="del-worktree-path"></code><br>
+            Branch: <code id="del-worktree-branch"></code>
+          </div>
+          <label class="inline-check">
+            <input type="checkbox" id="chk-purge-branch" checked>
+            Force-remove isolated worktree folder &amp; delete its git branch
+          </label>
+        </div>
+
+        <div id="del-workspace-box" class="card-box">
+          <div class="small" style="margin-bottom:6px">
+            <strong>Workspace Directory:</strong><br>
+            <code id="del-workspace-path"></code>
+          </div>
+          <label id="del-workspace-check-wrap" class="inline-check hidden" style="color:var(--danger) !important">
+            <input type="checkbox" id="chk-purge-workspace">
+            Permanently delete this entire workspace directory &amp; all files inside it on disk
+          </label>
+          <div id="del-workspace-protected-note" class="small muted hidden"></div>
+        </div>
+      </div>
+      <div class="modal-footer" style="padding:12px 18px">
+        <button type="button" class="btn btn-ghost modal-close" data-close="modal-delete-session">Cancel</button>
+        <button type="button" id="btn-confirm-delete-session" class="btn btn-danger">Delete Session</button>
+      </div>
     </div>
   </div>
 

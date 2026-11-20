@@ -362,32 +362,124 @@ function renderSessionList() {
 }
 
 async function deleteSession(id) {
+  await openDeleteSessionModal(id);
+}
+
+async function openDeleteSessionModal(id) {
+  if (!id) return;
   try {
-    await api(`/api/sessions/${id}`, { method: 'DELETE' });
-  } catch (err) {
-    if (err.status === 409) {
-      const files = (err.data?.dirtyFiles || []).join('\n');
-      const ok = await showConfirmDialog(
-        'Uncommitted Worktree Changes',
-        `Session worktree has uncommitted changes:\n${files}\n\nRemove worktree anyway? (Git branch ${err.data?.worktreeBranch} will be kept.)`
-      );
-      if (ok) {
-        await api(`/api/sessions/${id}?force=true`, { method: 'DELETE' });
-      } else {
-        return;
-      }
+    const detail = await api(`/api/sessions/${encodeURIComponent(id)}`);
+    const session = detail.session;
+    const purgeInfo = detail.purgeInfo || {
+      canDeleteWorkspace: false,
+      targetDir: session.workspacePath || '',
+      hasWorktree: Boolean(session.worktreeBranch),
+      worktreeDir: session.effectiveWorkDir || null,
+      worktreeBranch: session.worktreeBranch || null,
+      reason: 'Workspace status unavailable.',
+    };
+    state.pendingDeleteSession = { id, session, purgeInfo };
+
+    $('#del-session-heading').textContent = `Delete / Purge "${session.title}"`;
+    $('#del-session-summary').textContent = 'Choose how much of this session to permanently erase:';
+
+    const wtBox = $('#del-worktree-box');
+    const chkBranch = $('#chk-purge-branch');
+    if (purgeInfo.hasWorktree) {
+      wtBox.classList.remove('hidden');
+      $('#del-worktree-path').textContent = purgeInfo.worktreeDir || session.effectiveWorkDir || '';
+      $('#del-worktree-branch').textContent = purgeInfo.worktreeBranch || session.worktreeBranch || '';
+      chkBranch.checked = true;
     } else {
-      showToast(err.message, 'error');
-      return;
+      wtBox.classList.add('hidden');
+      chkBranch.checked = false;
     }
+
+    $('#del-workspace-path').textContent = purgeInfo.targetDir || session.workspacePath || '(none)';
+    const chkWs = $('#chk-purge-workspace');
+    chkWs.checked = false;
+    const checkWrap = $('#del-workspace-check-wrap');
+    const protNote = $('#del-workspace-protected-note');
+    if (purgeInfo.canDeleteWorkspace) {
+      checkWrap.classList.remove('hidden');
+      protNote.classList.add('hidden');
+    } else {
+      checkWrap.classList.add('hidden');
+      protNote.textContent = `Protected: ${purgeInfo.reason || 'Cannot delete this folder.'}`;
+      protNote.classList.remove('hidden');
+    }
+
+    syncDeleteButtonLabel();
+    $('#modal-delete-session').classList.remove('hidden');
+  } catch (err) {
+    showToast(err.message, 'error');
   }
-  if (state.activeSessionId === id) {
-    state.activeSessionId = null;
-    state.activeDetail = null;
+}
+
+function syncDeleteButtonLabel() {
+  const btn = $('#btn-confirm-delete-session');
+  if (!btn) return;
+  const purgeFiles = Boolean($('#chk-purge-workspace')?.checked || $('#chk-purge-branch')?.checked);
+  btn.textContent = purgeFiles ? 'Purge Session & Files Permanently' : 'Delete Session';
+}
+
+async function confirmDeleteSession() {
+  const pending = state.pendingDeleteSession;
+  if (!pending) return;
+  const { id, purgeInfo } = pending;
+  const deleteBranch = Boolean(purgeInfo.hasWorktree && $('#chk-purge-branch')?.checked);
+  const deleteWorkspace = Boolean(purgeInfo.canDeleteWorkspace && $('#chk-purge-workspace')?.checked);
+  const params = new URLSearchParams();
+  if (deleteBranch) {
+    params.set('force', 'true');
+    params.set('deleteBranch', 'true');
   }
-  showToast('Session deleted.', 'info');
-  await refreshSessions();
-  renderMain();
+  if (deleteWorkspace) {
+    params.set('force', 'true');
+    params.set('deleteWorkspace', 'true');
+  }
+  const qs = params.toString() ? `?${params.toString()}` : '';
+  const btn = $('#btn-confirm-delete-session');
+  btn.disabled = true;
+  try {
+    let res;
+    try {
+      res = await api(`/api/sessions/${encodeURIComponent(id)}${qs}`, { method: 'DELETE' });
+    } catch (err) {
+      if (err.status === 409) {
+        const files = (err.data?.dirtyFiles || []).join('\n');
+        const ok = await showConfirmDialog(
+          'Uncommitted Worktree Changes',
+          `Session worktree has uncommitted changes:\n${files}\n\nForce-remove worktree anyway?`
+        );
+        if (!ok) return;
+        params.set('force', 'true');
+        res = await api(`/api/sessions/${encodeURIComponent(id)}?${params.toString()}`, { method: 'DELETE' });
+      } else {
+        throw err;
+      }
+    }
+
+    $('#modal-delete-session').classList.add('hidden');
+    $('#modal-session-settings').classList.add('hidden');
+    state.pendingDeleteSession = null;
+
+    if (state.activeSessionId === id) {
+      state.activeSessionId = null;
+      state.activeDetail = null;
+    }
+    const parts = ['Session deleted'];
+    if (res?.worktreeRemoved) parts.push('worktree removed');
+    if (res?.branchDeleted) parts.push('git branch deleted');
+    if (res?.workspaceDeleted) parts.push('workspace directory erased');
+    showToast(`${parts.join(' · ')}.`, 'info', 4500);
+    await refreshSessions();
+    renderMain();
+  } catch (err) {
+    showToast(err.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 async function selectSession(id) {
@@ -1529,6 +1621,12 @@ $('#btn-toggle-rules').onclick = () => {
 $('#btn-session-settings').onclick = openSessionSettingsModal;
 $('#session-models-pill').style.cursor = 'pointer';
 $('#session-models-pill').onclick = openSessionSettingsModal;
+$('#btn-open-delete-session').onclick = () => {
+  if (state.activeSessionId) openDeleteSessionModal(state.activeSessionId);
+};
+$('#chk-purge-branch').addEventListener('change', syncDeleteButtonLabel);
+$('#chk-purge-workspace').addEventListener('change', syncDeleteButtonLabel);
+$('#btn-confirm-delete-session').onclick = confirmDeleteSession;
 
 $('#btn-save-rules').onclick = async () => {
   if (!state.activeSessionId) return;

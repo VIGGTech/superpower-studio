@@ -8,7 +8,7 @@ import { createStore } from './lib/store.mjs';
 import { loadSkillCatalog, readSkill } from './lib/skills.mjs';
 import { createWebSocketServer } from './lib/ws.mjs';
 import { listProviderModels, testProviderConnection } from './lib/providers/index.mjs';
-import { getWorkspaceStatus, cleanupSessionWorktree } from './lib/worktree.mjs';
+import { getWorkspaceStatus, cleanupSessionWorktree, assessWorkspacePurgeSafety, purgeWorkspaceDirectory } from './lib/worktree.mjs';
 import { resolveScopedPath } from './lib/tools.mjs';
 import { createOrchestrator, computeMissionEta } from './lib/orchestrator.mjs';
 import {
@@ -720,6 +720,12 @@ export async function createStudioServer({
             latestScreen: store.getLatestScreen(id)?.filename || null,
             screens: store.listScreens(id),
             companionEvents: store.getCompanionEvents(id, 20),
+            purgeInfo: assessWorkspacePurgeSafety({
+              session,
+              allSessions: store.listSessions(),
+              repoRoot: REPO_ROOT,
+              dataDir,
+            }),
           });
         }
         if (method === 'PUT') {
@@ -740,7 +746,11 @@ export async function createStudioServer({
         if (method === 'DELETE') {
           const session = store.getSession(id);
           if (!session) return sendJson(res, 404, { error: 'Session not found' });
-          const force = urlObj.searchParams.get('force') === 'true';
+          const purge = urlObj.searchParams.get('purge') === 'true';
+          const force = purge || urlObj.searchParams.get('force') === 'true';
+          const deleteBranch = purge || urlObj.searchParams.get('deleteBranch') === 'true';
+          const deleteWorkspace = urlObj.searchParams.get('deleteWorkspace') === 'true';
+
           if (session.worktreeBranch && !force) {
             const st = await getWorkspaceStatus(session.effectiveWorkDir || session.workspacePath);
             if (st.changedFiles.length > 0) {
@@ -752,7 +762,7 @@ export async function createStudioServer({
             }
           }
           await orchestrator.stopSession(id);
-          const wt = await cleanupSessionWorktree({ session, force });
+          const wt = await cleanupSessionWorktree({ session, force, deleteBranch });
           if (session.worktreeBranch && !wt.removed && wt.dirtyFiles?.length) {
             return sendJson(res, 409, {
               error: 'Worktree has uncommitted changes. Pass ?force=true to remove worktree (branch is preserved).',
@@ -760,9 +770,30 @@ export async function createStudioServer({
               worktreeBranch: session.worktreeBranch,
             });
           }
+
+          let workspaceDeleted = false;
+          let workspaceBlockedReason = null;
+          if (deleteWorkspace) {
+            const wsRes = purgeWorkspaceDirectory({
+              session,
+              allSessions: store.listSessions(),
+              repoRoot: REPO_ROOT,
+              dataDir,
+            });
+            workspaceDeleted = Boolean(wsRes.deleted);
+            if (wsRes.blocked) workspaceBlockedReason = wsRes.reason;
+          }
+
           store.deleteSession(id);
           wsServer.broadcast({ type: 'session_deleted', sessionId: id });
-          return sendJson(res, 200, { deleted: true, worktreeBranch: session.worktreeBranch });
+          return sendJson(res, 200, {
+            deleted: true,
+            worktreeRemoved: Boolean(wt.removed),
+            branchDeleted: Boolean(wt.branchDeleted),
+            worktreeBranch: session.worktreeBranch,
+            workspaceDeleted,
+            workspaceBlockedReason,
+          });
         }
       }
 
