@@ -382,3 +382,26 @@ test('per-session enabledExpertIds & enabledSkillPacks scope Coordinator roster,
     fs.rmSync(dataDir, { recursive: true, force: true });
   }
 });
+
+test('buildPromptWindow scales in linear O(N) time on 3,000+ message long-running sessions without blocking event loop', () => {
+  const msgs = [{ role: 'user', content: 'Initial mission prompt' }];
+  for (let i = 0; i < 1500; i++) {
+    msgs.push({
+      role: 'assistant',
+      content: `Turn ${i} working`,
+      toolCalls: [{ id: `tc_${i}`, name: 'read_file', arguments: { path: `file_${i}.txt` } }],
+    });
+    msgs.push({
+      role: 'tool',
+      toolCallId: `tc_${i}`,
+      toolName: 'read_file',
+      content: 'x'.repeat(1200),
+    });
+  }
+  const t0 = Date.now();
+  const windowed = buildPromptWindow(msgs, { maxChars: 60_000 });
+  const elapsedMs = Date.now() - t0;
+  assert.ok(elapsedMs < 500, `buildPromptWindow took ${elapsedMs}ms on ${msgs.length} msgs (expected <500ms)`);
+  assert.equal(windowed[0].role, 'user');
+  assert.ok(windowed.length > 2 && windowed.length < 400);
+});

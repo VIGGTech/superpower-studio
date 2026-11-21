@@ -113,76 +113,107 @@ export function buildPromptWindow(messages, { maxChars = DEFAULT_PROMPT_BUDGET_C
     .filter((m) => m && m.role && m.role !== 'system')
     .map((m) => ({ ...m }));
 
-  const totalChars = (list) => list.reduce((sum, m) => {
+  const msgSize = (m) => {
     const c = typeof m.content === 'string' ? m.content.length : 0;
     const t = m.toolCalls ? JSON.stringify(m.toolCalls).length : 0;
-    return sum + c + t + 32;
-  }, 0);
+    return c + t + 32;
+  };
 
-  if (totalChars(cloned) <= maxChars) return cloned;
+  // Precompute per-message sizes ONCE (O(N)) instead of rescanning inside loops (O(N^2))
+  const sizes = cloned.map(msgSize);
+  let total = sizes.reduce((a, b) => a + b, 0);
+  if (total <= maxChars) return cloned;
+
+  const trimToolAt = (i) => {
+    if (cloned[i].role === 'tool' && String(cloned[i].content || '').length > 500) {
+      const origLen = cloned[i].content.length;
+      const preview = String(cloned[i].content).slice(0, 300);
+      const nextContent = `${preview}\n... [trimmed earlier tool output (${origLen} chars)]`;
+      cloned[i].content = nextContent;
+      const nextSize = msgSize(cloned[i]);
+      total += nextSize - sizes[i];
+      sizes[i] = nextSize;
+    }
+  };
 
   // Pass 1: Trim older large tool results (protecting only the very latest 2 messages first)
   const protectCount = Math.min(2, cloned.length);
-  for (let i = 0; i < cloned.length - protectCount && totalChars(cloned) > maxChars; i++) {
-    if (cloned[i].role === 'tool' && String(cloned[i].content || '').length > 500) {
-      const origLen = cloned[i].content.length;
-      const preview = String(cloned[i].content).slice(0, 300);
-      cloned[i].content = `${preview}\n... [trimmed earlier tool output (${origLen} chars)]`;
-    }
+  for (let i = 0; i < cloned.length - protectCount && total > maxChars; i++) {
+    trimToolAt(i);
   }
-  if (totalChars(cloned) <= maxChars) return cloned;
+  if (total <= maxChars) return cloned;
 
   // Pass 1b: If still over budget, trim any remaining oversized tool results too
-  for (let i = 0; i < cloned.length && totalChars(cloned) > maxChars; i++) {
-    if (cloned[i].role === 'tool' && String(cloned[i].content || '').length > 500) {
-      const origLen = cloned[i].content.length;
-      const preview = String(cloned[i].content).slice(0, 300);
-      cloned[i].content = `${preview}\n... [trimmed earlier tool output (${origLen} chars)]`;
-    }
+  for (let i = 0; i < cloned.length && total > maxChars; i++) {
+    trimToolAt(i);
   }
-  if (totalChars(cloned) <= maxChars) return cloned;
+  if (total <= maxChars) return cloned;
 
   // Pass 2: Drop oldest turns while guaranteeing result starts on role='user' and never orphans tool messages
-  // Build atomic turn groups so an assistant(toolCalls) + its following tool messages are never split.
+  // Build atomic turn groups with precomputed sizes so an assistant(toolCalls) + its following tool messages are never split.
   const groups = [];
+  const groupSizes = [];
+  let keptTotal = 0;
   for (let i = 0; i < cloned.length; i++) {
     const m = cloned[i];
     if (m.role === 'assistant' && Array.isArray(m.toolCalls) && m.toolCalls.length > 0) {
       const grp = [m];
+      let gSize = sizes[i];
       while (i + 1 < cloned.length && cloned[i + 1].role === 'tool') {
-        grp.push(cloned[++i]);
+        i++;
+        grp.push(cloned[i]);
+        gSize += sizes[i];
       }
       groups.push(grp);
+      groupSizes.push(gSize);
+      keptTotal += gSize;
     } else if (m.role === 'tool') {
       // Orphaned tool message at input; drop it cleanly
       continue;
     } else {
       groups.push([m]);
+      groupSizes.push(sizes[i]);
+      keptTotal += sizes[i];
     }
   }
 
-  // Keep the earliest user message as an anchor if needed, and drop older non-anchor groups from the front
-  const flatGroups = (gs) => gs.flat();
-  let kept = groups.slice();
-  while (kept.length > 2 && totalChars(flatGroups(kept)) > maxChars) {
-    // Prefer dropping from index 1 if index 0 is the anchor user message and index 1 isn't the only remaining turn
-    if (kept[0][0]?.role === 'user' && kept.length > 2 && kept[1][0]?.role !== 'user') {
-      kept.splice(1, 1);
-    } else {
-      kept.shift();
-    }
-  }
+  // Keep the earliest user message as an anchor if needed, and drop older non-anchor groups in O(N) using index pointers
+  let anchorIdx = 0;
+  let dropCursor = 1;
+  let hasAnchor = groups.length > 0;
+  const remainingCount = () => (hasAnchor ? 1 : 0) + Math.max(0, groups.length - dropCursor);
 
-  // Ensure the window strictly starts with a 'user' message (required by Anthropic & Gemini)
-  const firstUser = cloned.find((m) => m.role === 'user');
-  while (kept.length > 0 && kept[0][0]?.role !== 'user') {
-    if (kept.length > 1) {
-      kept.shift();
+  while (remainingCount() > 2 && keptTotal > maxChars) {
+    if (hasAnchor && groups[anchorIdx][0]?.role === 'user' && dropCursor < groups.length && groups[dropCursor][0]?.role !== 'user') {
+      keptTotal -= groupSizes[dropCursor];
+      dropCursor++;
+    } else if (hasAnchor) {
+      keptTotal -= groupSizes[anchorIdx];
+      if (dropCursor < groups.length) {
+        anchorIdx = dropCursor;
+        dropCursor++;
+      } else {
+        hasAnchor = false;
+      }
     } else {
       break;
     }
   }
-  const result = flatGroups(kept);
+
+  const kept = [];
+  if (hasAnchor && anchorIdx < groups.length) kept.push(groups[anchorIdx]);
+  for (let g = dropCursor; g < groups.length; g++) kept.push(groups[g]);
+
+  // Ensure the window strictly starts with a 'user' message (required by Anthropic & Gemini)
+  const firstUser = cloned.find((m) => m.role === 'user');
+  let start = 0;
+  while (start < kept.length - 1 && kept[start][0]?.role !== 'user') {
+    start++;
+  }
+  const result = [];
+  for (let g = start; g < kept.length; g++) {
+    for (const m of kept[g]) result.push(m);
+  }
   if (result.length > 0 && result[0].role !== 'user') {
     const anchor = firstUser
       ? { role: 'user', content: String(firstUser.content || '').slice(0, 500) }

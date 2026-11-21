@@ -2251,21 +2251,30 @@ $('#btn-copy-svc-url').onclick = () => {
 };
 
 $('#btn-toggle-mobile-access').onclick = wrapAction(async () => {
+  const btn = $('#btn-toggle-mobile-access');
   const currentlyEnabled = Boolean(state.serviceInfo?.mobile?.enabled);
-  const res = await api('/api/service/mobile', {
-    method: 'POST',
-    body: JSON.stringify({ enabled: !currentlyEnabled }),
-  });
-  showToast(
-    res.mobile?.enabled
-      ? (res.mobile.needsRestartToBind
-          ? 'Mobile access enabled! Restart Studio once to bind to LAN / Tailscale.'
-          : 'Mobile access is LIVE — scan the QR code from your phone!')
-      : 'Mobile access disabled (localhost only after next restart).',
-    res.mobile?.enabled ? 'success' : 'info',
-    5000
-  );
-  await refreshServiceModal();
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = currentlyEnabled ? 'Disabling…' : 'Enabling…';
+  }
+  try {
+    const res = await api('/api/service/mobile', {
+      method: 'POST',
+      body: JSON.stringify({ enabled: !currentlyEnabled }),
+    });
+    showToast(
+      res.mobile?.enabled
+        ? (res.mobile.needsRestartToBind
+            ? 'Mobile access enabled! Restart Studio once to bind to LAN / Tailscale.'
+            : 'Mobile access is LIVE — scan the QR code from your phone!')
+        : 'Mobile access disabled (localhost only after next restart).',
+      res.mobile?.enabled ? 'success' : 'info',
+      5000
+    );
+    await refreshServiceModal();
+  } finally {
+    if (btn) btn.disabled = false;
+  }
 });
 
 $('#btn-copy-mobile-url').onclick = () => {
