@@ -11,7 +11,18 @@ export const DEFAULT_PROVIDERS = [
     apiKey: '',
     envVar: 'ANTHROPIC_API_KEY',
     defaultModel: 'claude-sonnet-4-5',
-    models: ['claude-sonnet-4-5', 'claude-opus-4-1', 'claude-haiku-4-5'],
+    models: [
+      'claude-sonnet-5-5',
+      'claude-opus-5-5',
+      'claude-sonnet-5',
+      'claude-opus-5',
+      'claude-haiku-5-5',
+      'claude-sonnet-4-6',
+      'claude-opus-4-6',
+      'claude-sonnet-4-5',
+      'claude-opus-4-1',
+      'claude-haiku-4-5',
+    ],
     toolMode: 'native',
     extraHeaders: {},
   },
@@ -23,7 +34,16 @@ export const DEFAULT_PROVIDERS = [
     apiKey: '',
     envVar: 'GEMINI_API_KEY',
     defaultModel: 'gemini-2.5-pro',
-    models: ['gemini-2.5-pro', 'gemini-2.5-flash'],
+    models: [
+      'gemini-4-hydrogen',
+      'gemini-3.8-flash',
+      'gemini-3.5-flash',
+      'gemini-3.5-flash-lite',
+      'gemini-2.5-pro',
+      'gemini-2.5-flash',
+      'gemma-4-31b-it',
+      'gemma-4-26b-a4b-it',
+    ],
     toolMode: 'native',
     extraHeaders: {},
   },
@@ -35,7 +55,12 @@ export const DEFAULT_PROVIDERS = [
     apiKey: '',
     envVar: 'DEEPSEEK_API_KEY',
     defaultModel: 'deepseek-chat',
-    models: ['deepseek-chat', 'deepseek-reasoner'],
+    models: [
+      'deepseek-v4-pro',
+      'deepseek-flash',
+      'deepseek-chat',
+      'deepseek-reasoner',
+    ],
     toolMode: 'native',
     extraHeaders: {},
   },
@@ -71,13 +96,62 @@ export const DEFAULT_PROVIDERS = [
   },
   {
     id: 'openrouter',
-    name: 'OpenRouter',
+    name: 'OpenRouter (Free & Open-Weight Hub)',
     kind: 'openai-compatible',
     baseUrl: 'https://openrouter.ai/api/v1',
     apiKey: '',
     envVar: 'OPENROUTER_API_KEY',
-    defaultModel: 'anthropic/claude-sonnet-4',
-    models: [],
+    defaultModel: 'openrouter/free',
+    models: [
+      'openrouter/free',
+      'nvidia/nemotron-3-ultra-550b-a55b:free',
+      'nvidia/nemotron-3.5-super-vl:free',
+      'nvidia/nemotron-3.5-lightning:free',
+      'google/gemma-4-31b-it:free',
+      'google/gemma-4-26b-a4b-it:free',
+      'liquid/lfm-3-1.7b:free',
+      'moonshotai/kimi-k3.1-pro',
+      'z-ai/glm-5.3-flash',
+      'z-ai/glm-5.3',
+      'deepseek/deepseek-v4.1-flash',
+      'xiaomi/mimo-v2.6-flash',
+      'xiaomi/mimo-v2.6-pro',
+    ],
+    toolMode: 'auto',
+    extraHeaders: {},
+  },
+  {
+    id: 'groq',
+    name: 'Groq (Free Tier / Ultra-Fast)',
+    kind: 'openai-compatible',
+    baseUrl: 'https://api.groq.com/openai/v1',
+    apiKey: '',
+    envVar: 'GROQ_API_KEY',
+    defaultModel: 'openai/gpt-oss-120b',
+    models: [
+      'openai/gpt-oss-120b',
+      'qwen/qwen3.8-27b',
+      'qwen/qwen3-32b',
+      'llama-3.3-70b-versatile',
+      'meta-llama/llama-4-scout-17b-16e-instruct',
+      'llama-3.1-8b-instant',
+    ],
+    toolMode: 'auto',
+    extraHeaders: {},
+  },
+  {
+    id: 'cerebras',
+    name: 'Cerebras (Ultra-Fast Inference)',
+    kind: 'openai-compatible',
+    baseUrl: 'https://api.cerebras.ai/v1',
+    apiKey: '',
+    envVar: 'CEREBRAS_API_KEY',
+    defaultModel: 'gpt-oss-120b',
+    models: [
+      'gpt-oss-120b',
+      'qwen-3.8-27b',
+      'llama-3.3-70b',
+    ],
     toolMode: 'auto',
     extraHeaders: {},
   },
@@ -89,7 +163,18 @@ export const DEFAULT_PROVIDERS = [
     apiKey: 'ollama',
     envVar: '',
     defaultModel: 'qwen2.5-coder:14b',
-    models: [],
+    models: [
+      'qwen2.5-coder:14b',
+      'qwen3:32b',
+      'qwen3:8b',
+      'gemma4:31b',
+      'gemma4:12b',
+      'llama3.3:70b',
+      'llama3.1:8b',
+      'mistral-small',
+      'phi4-mini',
+      'lfm3:1.7b',
+    ],
     toolMode: 'auto',
     extraHeaders: {},
   },
@@ -358,29 +443,43 @@ export function createStore({ dataDir }) {
   const sessionsRoot = path.join(dataDir, 'sessions');
   ensureDir(sessionsRoot);
 
+  if (!fs.existsSync(settingsFile)) {
+    atomicWriteJson(settingsFile, { shell: 'auto', autoResumeOnRestart: true });
+  }
   if (!fs.existsSync(providersFile)) {
     atomicWriteJson(providersFile, DEFAULT_PROVIDERS, 0o600);
   } else {
-    // Non-destructive upgrade: backfill default models for built-in providers whose models array is empty
+    // Non-destructive upgrade: merge newly introduced curated models into built-in providers
+    // (preserving existing/fetched models and custom settings), and append newly introduced
+    // built-in providers (e.g. Groq, Cerebras) unless explicitly deleted by the user.
     const existingProviders = readJsonSafe(providersFile, null);
     if (Array.isArray(existingProviders)) {
       const defaultsById = new Map(DEFAULT_PROVIDERS.map((d) => [d.id, d]));
       let changed = false;
       const upgraded = existingProviders.map((p) => {
         const def = p && defaultsById.get(p.id);
-        if (def && (!Array.isArray(p.models) || p.models.length === 0) && Array.isArray(def.models) && def.models.length > 0) {
-          changed = true;
-          return { ...p, models: [...def.models] };
+        if (def && Array.isArray(def.models) && def.models.length > 0) {
+          const existingModels = Array.isArray(p.models) ? p.models : [];
+          const missingDefaults = def.models.filter((m) => !existingModels.includes(m));
+          if (missingDefaults.length > 0) {
+            changed = true;
+            return { ...p, models: [...existingModels, ...missingDefaults] };
+          }
         }
         return p;
       });
+      const existingIds = new Set(upgraded.map((p) => p?.id).filter(Boolean));
+      const rawSettings = readJsonSafe(settingsFile, {});
+      const dismissed = new Set(Array.isArray(rawSettings?.dismissedDefaultProviders) ? rawSettings.dismissedDefaultProviders : []);
+      const toAppend = DEFAULT_PROVIDERS.filter((d) => !existingIds.has(d.id) && !dismissed.has(d.id));
+      if (toAppend.length > 0) {
+        upgraded.push(...structuredClone(toAppend));
+        changed = true;
+      }
       if (changed) {
         atomicWriteJson(providersFile, upgraded, 0o600);
       }
     }
-  }
-  if (!fs.existsSync(settingsFile)) {
-    atomicWriteJson(settingsFile, { shell: 'auto', autoResumeOnRestart: true });
   }
   if (!fs.existsSync(expertsFile)) {
     atomicWriteJson(expertsFile, DEFAULT_EXPERTS);
@@ -473,6 +572,14 @@ export function createStore({ dataDir }) {
     if (idx >= 0) list[idx] = merged;
     else list.push(merged);
     atomicWriteJson(providersFile, list, 0o600);
+    // If re-adding a previously dismissed default provider, clear its dismissal
+    const curSettings = readJsonSafe(settingsFile, {});
+    if (Array.isArray(curSettings?.dismissedDefaultProviders) && curSettings.dismissedDefaultProviders.includes(merged.id)) {
+      atomicWriteJson(settingsFile, {
+        ...curSettings,
+        dismissedDefaultProviders: curSettings.dismissedDefaultProviders.filter((x) => x !== merged.id),
+      });
+    }
     return getProvider(merged.id);
   }
 
@@ -481,6 +588,12 @@ export function createStore({ dataDir }) {
     const next = list.filter((p) => p.id !== id);
     if (next.length === list.length) return false;
     atomicWriteJson(providersFile, next, 0o600);
+    if (DEFAULT_PROVIDERS.some((d) => d.id === id)) {
+      const curSettings = readJsonSafe(settingsFile, {});
+      const dismissed = new Set(Array.isArray(curSettings?.dismissedDefaultProviders) ? curSettings.dismissedDefaultProviders : []);
+      dismissed.add(id);
+      atomicWriteJson(settingsFile, { ...curSettings, dismissedDefaultProviders: [...dismissed] });
+    }
     return true;
   }
 

@@ -1394,10 +1394,57 @@ function populateProviderSelect(selectEl, includeInherit = false) {
 const CUSTOM_MODEL_VALUE = '__custom__';
 
 const KNOWN_MODEL_LABELS = {
+  // Abliteration.ai
   'abliterated-model-large-flash': 'abliterated-model-large-flash — DeepSeek V4.1-Flash · 1M ctx · Text & Images',
   'abliterated-model': 'abliterated-model — 262K ctx · Text & Images',
   'abliterated-model-large-v2': 'abliterated-model-large-v2 — GLM-5.3 · 1M ctx · Text only',
   'abliterated-model-large': 'abliterated-model-large — 1M ctx · Text only (Deprecated)',
+  // OpenRouter Free & Open-Weight Hub
+  'openrouter/free': 'openrouter/free — [FREE] Auto-Router (best available free model)',
+  'nvidia/nemotron-3-ultra-550b-a55b:free': 'nvidia/nemotron-3-ultra-550b-a55b:free — [FREE] 550B MoE · Reasoning & Coding',
+  'nvidia/nemotron-3.5-super-vl:free': 'nvidia/nemotron-3.5-super-vl:free — [FREE] Vision + Reasoning',
+  'nvidia/nemotron-3.5-lightning:free': 'nvidia/nemotron-3.5-lightning:free — [FREE] Fast Open-Weight',
+  'google/gemma-4-31b-it:free': 'google/gemma-4-31b-it:free — [FREE] Gemma 4 31B Dense · Multimodal',
+  'google/gemma-4-26b-a4b-it:free': 'google/gemma-4-26b-a4b-it:free — [FREE] Gemma 4 26B MoE · Fast',
+  'liquid/lfm-3-1.7b:free': 'liquid/lfm-3-1.7b:free — [FREE] Lightweight Fast',
+  'moonshotai/kimi-k3.1-pro': 'moonshotai/kimi-k3.1-pro — Open-Weight Flagship · Agentic & Coding',
+  'z-ai/glm-5.3-flash': 'z-ai/glm-5.3-flash — GLM-5.3 Flash · Fast Open-Weight',
+  'z-ai/glm-5.3': 'z-ai/glm-5.3 — GLM-5.3 Flagship · Long Context',
+  'deepseek/deepseek-v4.1-flash': 'deepseek/deepseek-v4.1-flash — DeepSeek V4.1 Flash · Coding & Math',
+  'xiaomi/mimo-v2.6-flash': 'xiaomi/mimo-v2.6-flash — MiMo V2.6 Flash · Fast Open-Weight',
+  'xiaomi/mimo-v2.6-pro': 'xiaomi/mimo-v2.6-pro — MiMo V2.6 Pro · Reasoning',
+  // Google AI Studio / Gemini
+  'gemini-4-hydrogen': 'gemini-4-hydrogen — Frontier · Multimodal & Reasoning',
+  'gemini-3.8-flash': 'gemini-3.8-flash — Fast · Free Tier Eligible',
+  'gemini-3.5-flash': 'gemini-3.5-flash — Balanced · Free Tier Eligible',
+  'gemini-3.5-flash-lite': 'gemini-3.5-flash-lite — Ultra-Fast · Free Tier Eligible',
+  'gemma-4-31b-it': 'gemma-4-31b-it — Gemma 4 31B Open-Weight · Free Tier',
+  'gemma-4-26b-a4b-it': 'gemma-4-26b-a4b-it — Gemma 4 26B MoE · Free Tier',
+  // Groq (Free Tier / Ultra-Fast)
+  'openai/gpt-oss-120b': 'openai/gpt-oss-120b — [FREE TIER] 120B Open-Weight · Reasoning',
+  'qwen/qwen3.8-27b': 'qwen/qwen3.8-27b — [FREE TIER] Qwen 3.8 27B · Coding & Reasoning',
+  'qwen/qwen3-32b': 'qwen/qwen3-32b — [FREE TIER] Qwen 3 32B · Strong Coding',
+  'llama-3.3-70b-versatile': 'llama-3.3-70b-versatile — [FREE TIER] Llama 3.3 70B · General',
+  'meta-llama/llama-4-scout-17b-16e-instruct': 'meta-llama/llama-4-scout-17b-16e-instruct — [FREE TIER] Llama 4 Scout MoE · Vision',
+  'llama-3.1-8b-instant': 'llama-3.1-8b-instant — [FREE TIER] Ultra-Fast 8B',
+  // Cerebras (Ultra-Fast Inference)
+  'gpt-oss-120b': 'gpt-oss-120b — Ultra-Fast 120B Open-Weight',
+  'qwen-3.8-27b': 'qwen-3.8-27b — Ultra-Fast Qwen 3.8 27B',
+  'llama-3.3-70b': 'llama-3.3-70b — Ultra-Fast Llama 3.3 70B',
+  // DeepSeek
+  'deepseek-v4-pro': 'deepseek-v4-pro — DeepSeek V4 Pro · Frontier Coding & Reasoning',
+  'deepseek-flash': 'deepseek-flash — DeepSeek Flash · Fast & Low-Cost',
+  // Local Ollama
+  'qwen2.5-coder:14b': 'qwen2.5-coder:14b — [LOCAL] Coding Specialist (14B)',
+  'qwen3:32b': 'qwen3:32b — [LOCAL] Qwen 3 32B · Strong Coding & Reasoning',
+  'qwen3:8b': 'qwen3:8b — [LOCAL] Qwen 3 8B · Fast Local',
+  'gemma4:31b': 'gemma4:31b — [LOCAL] Gemma 4 31B · Dense Multimodal',
+  'gemma4:12b': 'gemma4:12b — [LOCAL] Gemma 4 12B · Balanced Local',
+  'llama3.3:70b': 'llama3.3:70b — [LOCAL] Llama 3.3 70B · General',
+  'llama3.1:8b': 'llama3.1:8b — [LOCAL] Llama 3.1 8B · Lightweight',
+  'mistral-small': 'mistral-small — [LOCAL] Mistral Small · Fast Local',
+  'phi4-mini': 'phi4-mini — [LOCAL] Phi-4 Mini · Compact',
+  'lfm3:1.7b': 'lfm3:1.7b — [LOCAL] Liquid LFM 3 1.7B · Ultra-Light',
 };
 
 function formatModelOptionLabel(modelId) {

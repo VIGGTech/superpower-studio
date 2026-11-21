@@ -101,7 +101,9 @@ export function buildGettingStartedHtml({ version = DEFAULT_VERSION, versionInfo
         <span class="pill">DeepSeek</span>
         <span class="pill">Alibaba Qwen</span>
         <span class="pill">Abliteration.ai</span>
-        <span class="pill">OpenRouter</span>
+        <span class="pill">OpenRouter (Free &amp; Open-Weight)</span>
+        <span class="pill">Groq (Free Tier)</span>
+        <span class="pill">Cerebras</span>
         <span class="pill">Ollama (Local)</span>
         <span class="pill">+ Any Custom OpenAI-Compatible API</span>
       </div>
@@ -166,7 +168,7 @@ function buildLicenseRtf({ version = DEFAULT_VERSION, versionInfo = getVersionIn
     '- All 15 Superpowers Core workflow skills + 8 Engineering Pack skills (23 live skills) + 12 Specialist Experts + full MIT LICENSE & NOTICE attribution\\par',
     '- Desktop & Start Menu shortcuts + Getting Started Guide\\par\\par',
     '\\b After installation:\\b0\\par',
-    '1. Open Superpowers Studio and click "1. Configure API Keys" (or "Providers & Models") to add your own API keys (Anthropic, Gemini, DeepSeek, Qwen, OpenRouter, Abliteration.ai, or local Ollama).\\par',
+    '1. Open Superpowers Studio and click "1. Configure API Keys" (or "Providers & Models") to add your own API keys (Anthropic, Gemini, DeepSeek, Qwen, OpenRouter, Groq, Cerebras, Abliteration.ai, or local Ollama).\\par',
     '2. Your API keys and sessions stay 100% local in %LOCALAPPDATA%\\SuperpowersStudio.\\par',
     '}',
   ].join('\r\n');

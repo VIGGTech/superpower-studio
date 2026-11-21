@@ -180,14 +180,14 @@ test('buildBootstrapPrompt adapts by tier, includes all 15 skills, pins rules/pl
   assert.match(coordPrompt, /report_complete/);
 });
 
-test('createStore seeds 7 providers, 12 experts (incl. 4 medical + 4 quality/security auditors), masks keys, and merges new defaults non-destructively', () => {
+test('createStore seeds 9 providers (incl. Groq, Cerebras, OpenRouter free models), 12 experts, masks keys, and merges new defaults non-destructively', () => {
   const dir = makeTempDir();
   const prevAblit = process.env.ABLIT_KEY;
   process.env.ABLIT_KEY = 'ak_test_secret_9999';
   try {
     const store = createStore({ dataDir: dir });
     const providers = store.getProviders();
-    assert.equal(providers.length, 7);
+    assert.equal(providers.length, 9);
     const ablit = providers.find((p) => p.id === 'abliteration');
     assert.ok(ablit);
     assert.equal(ablit.baseUrl, 'https://api.abliteration.ai/v1');
@@ -199,6 +199,80 @@ test('createStore seeds 7 providers, 12 experts (incl. 4 medical + 4 quality/sec
       'abliterated-model-large-v2',
       'abliterated-model-large',
     ]);
+
+    const openrouter = providers.find((p) => p.id === 'openrouter');
+    assert.ok(openrouter);
+    assert.equal(openrouter.defaultModel, 'openrouter/free');
+    assert.ok(openrouter.models.includes('nvidia/nemotron-3-ultra-550b-a55b:free'));
+    assert.ok(openrouter.models.includes('google/gemma-4-31b-it:free'));
+    assert.ok(openrouter.models.includes('moonshotai/kimi-k3.1-pro'));
+
+    const groq = providers.find((p) => p.id === 'groq');
+    assert.ok(groq);
+    assert.equal(groq.baseUrl, 'https://api.groq.com/openai/v1');
+    assert.equal(groq.envVar, 'GROQ_API_KEY');
+    assert.ok(groq.models.includes('openai/gpt-oss-120b'));
+    assert.ok(groq.models.includes('qwen/qwen3.8-27b'));
+
+    const cerebras = providers.find((p) => p.id === 'cerebras');
+    assert.ok(cerebras);
+    assert.equal(cerebras.baseUrl, 'https://api.cerebras.ai/v1');
+    assert.equal(cerebras.envVar, 'CEREBRAS_API_KEY');
+    assert.ok(cerebras.models.includes('gpt-oss-120b'));
+
+    const ollama = providers.find((p) => p.id === 'ollama');
+    assert.ok(ollama);
+    assert.ok(ollama.models.includes('gemma4:31b'));
+    assert.ok(ollama.models.includes('qwen3:32b'));
+
+    // Deleting a default provider persists dismissal across reloads (never resurrected),
+    // and re-adding it clears the dismissal cleanly
+    assert.equal(store.deleteProvider('cerebras'), true);
+    const storeAfterProvDelete = createStore({ dataDir: dir });
+    assert.equal(storeAfterProvDelete.getProviders().some((p) => p.id === 'cerebras'), false);
+    storeAfterProvDelete.upsertProvider({
+      id: 'cerebras',
+      name: 'Cerebras Custom',
+      kind: 'openai-compatible',
+      baseUrl: 'https://api.cerebras.ai/v1',
+      defaultModel: 'gpt-oss-120b',
+    });
+    const storeAfterReadd = createStore({ dataDir: dir });
+    assert.equal(storeAfterReadd.getProviders().find((p) => p.id === 'cerebras')?.name, 'Cerebras Custom');
+
+    // Simulate legacy providers.json with older Gemini models & no Groq/Cerebras:
+    // reload merges newly introduced models non-destructively and appends Groq/Cerebras without clobbering user config
+    const legacyProvDir = makeTempDir();
+    try {
+      fs.writeFileSync(
+        path.join(legacyProvDir, 'providers.json'),
+        JSON.stringify([
+          {
+            id: 'gemini',
+            name: 'My Gemini',
+            kind: 'gemini',
+            baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+            apiKey: 'saved_key_xyz',
+            defaultModel: 'gemini-2.5-pro',
+            models: ['gemini-2.5-pro', 'my-custom-gemini'],
+          },
+        ], null, 2),
+        'utf8'
+      );
+      const upgradedStore = createStore({ dataDir: legacyProvDir });
+      const upgradedProviders = upgradedStore.getProviders();
+      assert.equal(upgradedProviders.length, 9);
+      const gem = upgradedProviders.find((p) => p.id === 'gemini');
+      assert.equal(gem.name, 'My Gemini');
+      assert.equal(gem.apiKey, 'saved_key_xyz');
+      assert.ok(gem.models.includes('my-custom-gemini'));
+      assert.ok(gem.models.includes('gemini-4-hydrogen'));
+      assert.ok(gem.models.includes('gemma-4-31b-it'));
+      assert.ok(upgradedProviders.some((p) => p.id === 'groq'));
+      assert.ok(upgradedProviders.some((p) => p.id === 'cerebras'));
+    } finally {
+      fs.rmSync(legacyProvDir, { recursive: true, force: true });
+    }
 
     const masked = store.getProvidersMasked().find((p) => p.id === 'abliteration');
     assert.equal(masked.hasKey, true);
