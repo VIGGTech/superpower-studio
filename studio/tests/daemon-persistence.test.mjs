@@ -208,6 +208,10 @@ test('Windows background service install, status, and uninstall build safe schta
     let installed = false;
     const fakeExec = (file, args) => {
       calls.push({ file, args });
+      if (file === 'reg.exe') {
+        if (args[0] === 'query') throw Object.assign(new Error('ERROR: The system was unable to find the specified registry key or value.'), { status: 1 });
+        return '';
+      }
       if (args.includes('/Create')) {
         installed = true;
         return 'SUCCESS: The scheduled task "SuperpowersStudioBackground" has successfully been created.';
@@ -248,6 +252,60 @@ test('Windows background service install, status, and uninstall build safe schta
     assert.equal(un.installed, false);
     assert.equal(fs.existsSync(ins.launcherPath), false);
     assert.ok(calls.some((c) => c.file === 'schtasks.exe' && c.args.includes('/Delete')));
+  } finally {
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  }
+});
+
+test('Windows background service falls back to zero-admin HKCU Run registry when schtasks fails with Access Denied', () => {
+  const dataDir = makeTempDir('sp-winsvc-reg-');
+  try {
+    let regValue = null;
+    const calls = [];
+    const fakeNonAdminExec = (file, args) => {
+      calls.push({ file, args });
+      if (file === 'schtasks.exe') {
+        throw Object.assign(new Error('ERROR: Access is denied.'), { status: 1 });
+      }
+      if (file === 'reg.exe') {
+        if (args[0] === 'add') {
+          regValue = args[args.indexOf('/d') + 1];
+          return 'The operation completed successfully.';
+        }
+        if (args[0] === 'query') {
+          if (!regValue) throw Object.assign(new Error('not found'), { status: 1 });
+          return `    SuperpowersStudioBackground    REG_SZ    ${regValue}`;
+        }
+        if (args[0] === 'delete') {
+          regValue = null;
+          return 'The operation completed successfully.';
+        }
+      }
+      return '';
+    };
+
+    const st0 = getWindowsServiceStatus({ platform: 'win32', execFileSyncImpl: fakeNonAdminExec });
+    assert.equal(st0.installed, false);
+
+    const ins = installWindowsService({
+      dataDir,
+      port: 49500,
+      platform: 'win32',
+      execFileSyncImpl: fakeNonAdminExec,
+    });
+    assert.equal(ins.installed, true);
+    assert.equal(ins.method, 'registry-run');
+    assert.ok(regValue && regValue.includes('launch-studio-hidden.vbs'));
+
+    const st1 = getWindowsServiceStatus({ platform: 'win32', execFileSyncImpl: fakeNonAdminExec });
+    assert.equal(st1.installed, true);
+    assert.equal(st1.method, 'registry-run');
+
+    const un = uninstallWindowsService({ dataDir, platform: 'win32', execFileSyncImpl: fakeNonAdminExec });
+    assert.equal(un.installed, false);
+    assert.equal(regValue, null);
+    assert.equal(fs.existsSync(ins.launcherPath), false);
+    assert.ok(calls.some((c) => c.file === 'reg.exe' && c.args[0] === 'delete'));
   } finally {
     fs.rmSync(dataDir, { recursive: true, force: true });
   }

@@ -222,13 +222,15 @@ function escapeVbsString(str) {
   return String(str).replace(/"/g, '""');
 }
 
+const WINDOWS_RUN_REG_KEY = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run';
+
 export function getWindowsServiceStatus({
   taskName = WINDOWS_TASK_NAME,
   platform = process.platform,
   execFileSyncImpl = execFileSync,
 } = {}) {
   if (platform !== 'win32') {
-    return { supported: false, installed: false, taskName, platform, reason: 'Windows Task Scheduler auto-start is only available on Windows.' };
+    return { supported: false, installed: false, taskName, platform, reason: 'Windows auto-start is only available on Windows.' };
   }
   try {
     const out = execFileSyncImpl('schtasks.exe', ['/Query', '/TN', taskName], {
@@ -236,7 +238,17 @@ export function getWindowsServiceStatus({
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
     });
-    return { supported: true, installed: true, taskName, platform, detail: String(out || '').trim().slice(0, 300) };
+    return { supported: true, installed: true, method: 'schtasks', taskName, platform, detail: String(out || '').trim().slice(0, 300) };
+  } catch {
+    // Fall through to zero-admin HKCU Run registry check
+  }
+  try {
+    const out = execFileSyncImpl('reg.exe', ['query', WINDOWS_RUN_REG_KEY, '/v', taskName], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+    });
+    return { supported: true, installed: true, method: 'registry-run', taskName, platform, detail: String(out || '').trim().slice(0, 300) };
   } catch {
     return { supported: true, installed: false, taskName, platform };
   }
@@ -267,15 +279,28 @@ export function installWindowsService({
   ].join('\r\n');
   fs.writeFileSync(launcherPath, vbsContent, 'utf8');
 
-  execFileSyncImpl(
-    'schtasks.exe',
-    ['/Create', '/TN', taskName, '/TR', `wscript.exe "${launcherPath}"`, '/SC', 'ONLOGON', '/F'],
-    { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true }
-  );
+  const launchCommand = `wscript.exe "${launcherPath}"`;
+  let method = 'schtasks';
+  try {
+    execFileSyncImpl(
+      'schtasks.exe',
+      ['/Create', '/TN', taskName, '/TR', launchCommand, '/SC', 'ONLOGON', '/F'],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true }
+    );
+  } catch {
+    // Non-elevated Windows 10/11 accounts cannot create ONLOGON schtasks; use zero-admin HKCU Run key instead
+    execFileSyncImpl(
+      'reg.exe',
+      ['add', WINDOWS_RUN_REG_KEY, '/v', taskName, '/t', 'REG_SZ', '/d', launchCommand, '/f'],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true }
+    );
+    method = 'registry-run';
+  }
 
   return {
     supported: true,
     installed: true,
+    method,
     taskName,
     launcherPath,
     platform,
@@ -298,7 +323,16 @@ export function uninstallWindowsService({
       windowsHide: true,
     });
   } catch {
-    // Task may already be absent
+    // Task may already be absent or inaccessible without admin
+  }
+  try {
+    execFileSyncImpl('reg.exe', ['delete', WINDOWS_RUN_REG_KEY, '/v', taskName, '/f'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+    });
+  } catch {
+    // Registry entry may already be absent
   }
   const launcherPath = path.join(dataDir, 'launch-studio-hidden.vbs');
   try {
