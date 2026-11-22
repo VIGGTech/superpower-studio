@@ -238,6 +238,14 @@ code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospac
   border-radius: 6px;
 }
 .eta-pill { color: var(--accent); border-color: rgba(0, 113, 227, 0.35); }
+.ctx-pill {
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.ctx-pill:hover { border-color: var(--accent); }
+.ctx-pill.compacted { color: var(--accent); border-color: rgba(0, 113, 227, 0.4); }
+.ctx-pill.warn { color: var(--warn); border-color: rgba(255, 159, 10, 0.55); }
 
 /* Live pulsing status dot */
 .status-dot {
@@ -336,6 +344,32 @@ code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospac
   resize: vertical;
 }
 .rules-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+.memory-section {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.memory-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.memory-header label { font-size: 12px; font-weight: 600; color: var(--muted); }
+.memory-section textarea {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  padding: 8px;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 12px;
+  resize: vertical;
+}
 
 .timeline {
   flex: 1;

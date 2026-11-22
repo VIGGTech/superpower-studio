@@ -3,8 +3,20 @@ import { buildBootstrapPrompt, readSkill } from './skills.mjs';
 import { streamChat as defaultStreamChat } from './providers/index.mjs';
 import { prepareSessionWorkspace } from './worktree.mjs';
 import { detectDefaultShell, getToolDefinitions, createToolExecutor } from './tools.mjs';
+import {
+  buildPromptWindow,
+  resolveContextBudget,
+  buildOverflowLadder,
+  buildDeterministicMemoryDelta,
+  mergeWorkingMemory,
+  buildCompactionPrompt,
+  estimateMessagesChars,
+  estimateTokens,
+  MAX_WORKING_MEMORY_CHARS,
+} from './context.mjs';
 
-const DEFAULT_PROMPT_BUDGET_CHARS = 60_000;
+export { buildPromptWindow };
+
 const DEFAULT_EXPERT_MAX_TURNS = 40;
 const MAX_SUBORDINATE_TOOL_STEPS = 20;
 
@@ -108,121 +120,6 @@ function extractFallbackPlanFromMessages(messages = []) {
   return assistantMsgs.length > 0 ? String(assistantMsgs[assistantMsgs.length - 1].content) : '';
 }
 
-export function buildPromptWindow(messages, { maxChars = DEFAULT_PROMPT_BUDGET_CHARS } = {}) {
-  const cloned = messages
-    .filter((m) => m && m.role && m.role !== 'system')
-    .map((m) => ({ ...m }));
-
-  const msgSize = (m) => {
-    const c = typeof m.content === 'string' ? m.content.length : 0;
-    const t = m.toolCalls ? JSON.stringify(m.toolCalls).length : 0;
-    return c + t + 32;
-  };
-
-  // Precompute per-message sizes ONCE (O(N)) instead of rescanning inside loops (O(N^2))
-  const sizes = cloned.map(msgSize);
-  let total = sizes.reduce((a, b) => a + b, 0);
-  if (total <= maxChars) return cloned;
-
-  const trimToolAt = (i) => {
-    if (cloned[i].role === 'tool' && String(cloned[i].content || '').length > 500) {
-      const origLen = cloned[i].content.length;
-      const preview = String(cloned[i].content).slice(0, 300);
-      const nextContent = `${preview}\n... [trimmed earlier tool output (${origLen} chars)]`;
-      cloned[i].content = nextContent;
-      const nextSize = msgSize(cloned[i]);
-      total += nextSize - sizes[i];
-      sizes[i] = nextSize;
-    }
-  };
-
-  // Pass 1: Trim older large tool results (protecting only the very latest 2 messages first)
-  const protectCount = Math.min(2, cloned.length);
-  for (let i = 0; i < cloned.length - protectCount && total > maxChars; i++) {
-    trimToolAt(i);
-  }
-  if (total <= maxChars) return cloned;
-
-  // Pass 1b: If still over budget, trim any remaining oversized tool results too
-  for (let i = 0; i < cloned.length && total > maxChars; i++) {
-    trimToolAt(i);
-  }
-  if (total <= maxChars) return cloned;
-
-  // Pass 2: Drop oldest turns while guaranteeing result starts on role='user' and never orphans tool messages
-  // Build atomic turn groups with precomputed sizes so an assistant(toolCalls) + its following tool messages are never split.
-  const groups = [];
-  const groupSizes = [];
-  let keptTotal = 0;
-  for (let i = 0; i < cloned.length; i++) {
-    const m = cloned[i];
-    if (m.role === 'assistant' && Array.isArray(m.toolCalls) && m.toolCalls.length > 0) {
-      const grp = [m];
-      let gSize = sizes[i];
-      while (i + 1 < cloned.length && cloned[i + 1].role === 'tool') {
-        i++;
-        grp.push(cloned[i]);
-        gSize += sizes[i];
-      }
-      groups.push(grp);
-      groupSizes.push(gSize);
-      keptTotal += gSize;
-    } else if (m.role === 'tool') {
-      // Orphaned tool message at input; drop it cleanly
-      continue;
-    } else {
-      groups.push([m]);
-      groupSizes.push(sizes[i]);
-      keptTotal += sizes[i];
-    }
-  }
-
-  // Keep the earliest user message as an anchor if needed, and drop older non-anchor groups in O(N) using index pointers
-  let anchorIdx = 0;
-  let dropCursor = 1;
-  let hasAnchor = groups.length > 0;
-  const remainingCount = () => (hasAnchor ? 1 : 0) + Math.max(0, groups.length - dropCursor);
-
-  while (remainingCount() > 2 && keptTotal > maxChars) {
-    if (hasAnchor && groups[anchorIdx][0]?.role === 'user' && dropCursor < groups.length && groups[dropCursor][0]?.role !== 'user') {
-      keptTotal -= groupSizes[dropCursor];
-      dropCursor++;
-    } else if (hasAnchor) {
-      keptTotal -= groupSizes[anchorIdx];
-      if (dropCursor < groups.length) {
-        anchorIdx = dropCursor;
-        dropCursor++;
-      } else {
-        hasAnchor = false;
-      }
-    } else {
-      break;
-    }
-  }
-
-  const kept = [];
-  if (hasAnchor && anchorIdx < groups.length) kept.push(groups[anchorIdx]);
-  for (let g = dropCursor; g < groups.length; g++) kept.push(groups[g]);
-
-  // Ensure the window strictly starts with a 'user' message (required by Anthropic & Gemini)
-  const firstUser = cloned.find((m) => m.role === 'user');
-  let start = 0;
-  while (start < kept.length - 1 && kept[start][0]?.role !== 'user') {
-    start++;
-  }
-  const result = [];
-  for (let g = start; g < kept.length; g++) {
-    for (const m of kept[g]) result.push(m);
-  }
-  if (result.length > 0 && result[0].role !== 'user') {
-    const anchor = firstUser
-      ? { role: 'user', content: String(firstUser.content || '').slice(0, 500) }
-      : { role: 'user', content: 'Continue.' };
-    result.unshift(anchor);
-  }
-  return result;
-}
-
 export function createOrchestrator({
   store,
   skillsRoot,
@@ -248,6 +145,7 @@ export function createOrchestrator({
         subordinateQueue: Promise.resolve(),
         activeExperts: new Set(),
         consecutiveRecoveries: 0,
+        compactionInFlight: false,
       });
     }
     return runtimes.get(sessionId);
@@ -352,8 +250,143 @@ export function createOrchestrator({
     return out;
   }
 
+  async function summarizeIntoWorkingMemory({
+    sessionId,
+    tier,
+    provider,
+    model,
+    existingMemory,
+    droppedMessages,
+    signal,
+  }) {
+    if (!Array.isArray(droppedMessages) || droppedMessages.length === 0) {
+      return existingMemory || '';
+    }
+    const prompt = buildCompactionPrompt(existingMemory, droppedMessages, { tier });
+    try {
+      const canCallLlm = Boolean(provider && (provider.effectiveApiKey || provider.id === 'ollama' || streamChatImpl !== defaultStreamChat));
+      if (canCallLlm && !signal?.aborted) {
+        const ac = new AbortController();
+        const onParentAbort = () => ac.abort();
+        if (signal) signal.addEventListener('abort', onParentAbort, { once: true });
+        const timer = setTimeout(() => ac.abort(), 25_000);
+        try {
+          const res = await streamChatImpl({
+            provider,
+            model,
+            systemPrompt: 'You are a precise technical memory compactor. Output ONLY clean, factual markdown bullet notes with no preamble.',
+            messages: [{ role: 'user', content: prompt }],
+            tools: [],
+            signal: ac.signal,
+            onText: () => {},
+            onReasoning: () => {},
+          });
+          const text = String(res?.content || '').trim();
+          if (text.length >= 40) {
+            return text.slice(0, MAX_WORKING_MEMORY_CHARS);
+          }
+        } finally {
+          clearTimeout(timer);
+          if (signal) signal.removeEventListener('abort', onParentAbort);
+        }
+      }
+    } catch {
+      // Fall back to deterministic extraction below so compaction never breaks execution
+    }
+    const delta = buildDeterministicMemoryDelta(droppedMessages);
+    return mergeWorkingMemory(existingMemory, delta, { maxChars: MAX_WORKING_MEMORY_CHARS });
+  }
+
+  async function maybeCompactDroppedHistory({
+    sessionId,
+    tier,
+    provider,
+    model,
+    messages,
+    signal,
+  }) {
+    if (!sessionId || (tier !== 'subordinate' && tier !== 'coordinator')) return;
+    const runtime = getRuntime(sessionId);
+    if (runtime.compactionInFlight) return;
+    const session = store.getSession(sessionId);
+    if (!session) return;
+
+    const budget = resolveContextBudget({ session, provider, model });
+    const meta = buildPromptWindow(messages, { maxChars: budget.maxChars, returnMeta: true });
+    if (meta.droppedCount <= 0) return;
+
+    const watermarks = session.memoryWatermarks || { subordinate: 0, coordinator: 0 };
+    const prevWatermark = Number(watermarks[tier] || 0);
+    if (meta.droppedCount <= prevWatermark) return;
+
+    const newlyDropped = meta.droppedMessages.slice(prevWatermark);
+    const newlyDroppedChars = estimateMessagesChars(newlyDropped);
+    // Avoid compacting on every single message; batch every >=4 dropped messages or >=8K dropped chars
+    if (newlyDropped.length < 4 && newlyDroppedChars < 8_000) return;
+
+    runtime.compactionInFlight = true;
+    try {
+      const nextMemory = await summarizeIntoWorkingMemory({
+        sessionId,
+        tier,
+        provider,
+        model,
+        existingMemory: session.workingMemory || '',
+        droppedMessages: newlyDropped,
+        signal,
+      });
+      const latest = store.getSession(sessionId);
+      if (!latest) return;
+      const nextWatermarks = {
+        ...(latest.memoryWatermarks || { subordinate: 0, coordinator: 0 }),
+        [tier]: meta.droppedCount,
+      };
+      store.updateSession(sessionId, {
+        workingMemory: nextMemory,
+        memoryWatermarks: nextWatermarks,
+      });
+      emitEvent({
+        type: 'context_compacted',
+        sessionId,
+        tier,
+        compactedCount: newlyDropped.length,
+        memoryTokens: estimateTokens(nextMemory.length),
+      });
+    } finally {
+      runtime.compactionInFlight = false;
+    }
+  }
+
+  function recordContextStats({ sessionId, tier, provider, model, budget, systemPrompt, meta }) {
+    if (!sessionId) return null;
+    const session = store.getSession(sessionId);
+    if (!session) return null;
+    const systemChars = String(systemPrompt || '').length;
+    const memoryChars = String(session.workingMemory || '').length;
+    const stats = {
+      tier: tier || 'subordinate',
+      providerId: provider?.id || '',
+      model: model || '',
+      mode: budget.mode,
+      tierLabel: budget.tierLabel,
+      usedTokens: estimateTokens(meta.keptChars),
+      budgetTokens: budget.maxTokens,
+      totalHistoryTokens: estimateTokens(meta.totalChars),
+      systemTokens: estimateTokens(systemChars),
+      memoryTokens: estimateTokens(memoryChars),
+      modelContextTokens: budget.modelContextTokens,
+      droppedCount: meta.droppedCount,
+      trimmedToolCount: meta.trimmedToolCount,
+      updatedAt: new Date().toISOString(),
+    };
+    store.updateSession(sessionId, { lastContextStats: stats });
+    emitEvent({ type: 'context_updated', sessionId, contextStats: stats });
+    return stats;
+  }
+
   async function callModelWithOverflowRetry({
     sessionId,
+    tier = 'subordinate',
     provider,
     model,
     systemPrompt,
@@ -363,14 +396,29 @@ export function createOrchestrator({
     onText,
     onReasoning,
   }) {
+    const session = sessionId ? store.getSession(sessionId) : null;
+    const budget = resolveContextBudget({ session, provider, model });
+    const ladder = buildOverflowLadder(budget.maxChars);
+
     const attemptCall = async (maxChars, maxImages) => {
       const hydrated = sessionId ? hydrateMessages(sessionId, messages, { maxImages }) : messages;
-      const windowed = buildPromptWindow(hydrated, { maxChars });
+      const meta = buildPromptWindow(hydrated, { maxChars, returnMeta: true });
+      if (sessionId && (tier === 'subordinate' || tier === 'coordinator')) {
+        recordContextStats({
+          sessionId,
+          tier,
+          provider,
+          model,
+          budget: { ...budget, maxTokens: estimateTokens(maxChars) },
+          systemPrompt,
+          meta,
+        });
+      }
       return await streamChatImpl({
         provider,
         model,
         systemPrompt,
-        messages: windowed,
+        messages: meta.messages,
         tools,
         signal,
         onText,
@@ -378,24 +426,41 @@ export function createOrchestrator({
       });
     };
 
-    try {
-      return await attemptCall(DEFAULT_PROMPT_BUDGET_CHARS, DEFAULT_MAX_IMAGES_PER_REQUEST);
-    } catch (err) {
-      if (isImageLimitError(err)) {
-        try {
-          return await attemptCall(DEFAULT_PROMPT_BUDGET_CHARS, 1);
-        } catch (err2) {
-          if (isImageLimitError(err2)) {
-            return await attemptCall(DEFAULT_PROMPT_BUDGET_CHARS, 0);
+    const runWithImageRetries = async (maxChars, startImages) => {
+      try {
+        return await attemptCall(maxChars, startImages);
+      } catch (err) {
+        if (isImageLimitError(err) && startImages > 1) {
+          try {
+            return await attemptCall(maxChars, 1);
+          } catch (err2) {
+            if (isImageLimitError(err2)) {
+              return await attemptCall(maxChars, 0);
+            }
+            throw err2;
           }
-          throw err2;
+        }
+        if (isImageLimitError(err) && startImages === 1) {
+          return await attemptCall(maxChars, 0);
+        }
+        throw err;
+      }
+    };
+
+    let lastErr = null;
+    for (let i = 0; i < ladder.length; i++) {
+      const maxChars = ladder[i];
+      const maxImages = i === 0 ? DEFAULT_MAX_IMAGES_PER_REQUEST : 1;
+      try {
+        return await runWithImageRetries(maxChars, maxImages);
+      } catch (err) {
+        lastErr = err;
+        if (!err?.isContextOverflow || i === ladder.length - 1) {
+          throw err;
         }
       }
-      if (err?.isContextOverflow) {
-        return await attemptCall(16_000, 1);
-      }
-      throw err;
     }
+    throw lastErr;
   }
 
   function appendFollowUpTaskIfAllDone(sessionId, instructions) {
@@ -590,6 +655,7 @@ export function createOrchestrator({
       phase: 'running',
       rules: session.rules,
       plan: session.plan,
+      workingMemory: session.workingMemory,
       pinnedSkills: expertPinnedSkills,
       enabledSkillPacks: session.enabledSkillPacks,
       shellName: shell.displayName,
@@ -632,6 +698,7 @@ export function createOrchestrator({
 
         const reply = await callModelWithOverflowRetry({
           sessionId,
+          tier: 'expert',
           provider,
           model,
           systemPrompt,
@@ -799,17 +866,27 @@ export function createOrchestrator({
         }
 
         const { provider, model } = resolveProviderAndModel(session, 'coordinator');
+        await maybeCompactDroppedHistory({
+          sessionId,
+          tier: 'coordinator',
+          provider,
+          model,
+          messages: coord.messages,
+          signal: ac.signal,
+        });
+        const latestForPrompt = store.getSession(sessionId) || session;
         const systemPrompt = buildBootstrapPrompt({
           skillsRoot,
           tier: 'coordinator',
           phase: 'running',
-          rules: session.rules,
-          plan: session.plan,
-          pinnedSkills: session.pinnedSkills,
-          enabledSkillPacks: session.enabledSkillPacks,
+          rules: latestForPrompt.rules,
+          plan: latestForPrompt.plan,
+          workingMemory: latestForPrompt.workingMemory,
+          pinnedSkills: latestForPrompt.pinnedSkills,
+          enabledSkillPacks: latestForPrompt.enabledSkillPacks,
           shellName: shell.displayName,
-          effectiveWorkDir: session.effectiveWorkDir,
-          expertRoster: getSessionActiveExperts(session),
+          effectiveWorkDir: latestForPrompt.effectiveWorkDir,
+          expertRoster: getSessionActiveExperts(latestForPrompt),
         });
 
         const tools = getToolDefinitions({ tier: 'coordinator', phase: 'running' });
@@ -857,6 +934,7 @@ export function createOrchestrator({
 
         const reply = await callModelWithOverflowRetry({
           sessionId,
+          tier: 'coordinator',
           provider,
           model,
           systemPrompt,
@@ -1098,14 +1176,24 @@ export function createOrchestrator({
     let respondedToUser = false;
     let stoppedByPollingGuard = false;
     for (let step = 0; step < MAX_SUBORDINATE_TOOL_STEPS; step++) {
-      const freshSession = store.getSession(sessionId);
+      let freshSession = store.getSession(sessionId);
       const { provider, model } = resolveProviderAndModel(freshSession, 'subordinate');
+      const messages = store.getMessages(sessionId);
+      await maybeCompactDroppedHistory({
+        sessionId,
+        tier: 'subordinate',
+        provider,
+        model,
+        messages,
+      });
+      freshSession = store.getSession(sessionId) || freshSession;
       const systemPrompt = buildBootstrapPrompt({
         skillsRoot,
         tier: 'subordinate',
         phase: freshSession.phase,
         rules: freshSession.rules,
         plan: freshSession.plan,
+        workingMemory: freshSession.workingMemory,
         pinnedSkills: freshSession.pinnedSkills,
         enabledSkillPacks: freshSession.enabledSkillPacks,
         shellName: shell.displayName,
@@ -1228,9 +1316,9 @@ export function createOrchestrator({
         },
       });
 
-      const messages = store.getMessages(sessionId);
       const reply = await callModelWithOverflowRetry({
         sessionId,
+        tier: 'subordinate',
         provider,
         model,
         systemPrompt,
@@ -1305,6 +1393,7 @@ export function createOrchestrator({
           phase: freshSession.phase,
           rules: freshSession.rules,
           plan: freshSession.plan,
+          workingMemory: freshSession.workingMemory,
           pinnedSkills: freshSession.pinnedSkills,
           enabledSkillPacks: freshSession.enabledSkillPacks,
           shellName: shell.displayName,
@@ -1314,6 +1403,7 @@ export function createOrchestrator({
         const messages = store.getMessages(sessionId);
         const finalReply = await callModelWithOverflowRetry({
           sessionId,
+          tier: 'subordinate',
           provider,
           model,
           systemPrompt,
@@ -1561,6 +1651,98 @@ export function createOrchestrator({
     return broadcastSession(sessionId);
   }
 
+  async function compactSessionContext(sessionId) {
+    const session = store.getSession(sessionId);
+    if (!session) throw new Error(`Session not found: ${sessionId}`);
+    const runtime = getRuntime(sessionId);
+    if (runtime.compactionInFlight) {
+      return {
+        session,
+        workingMemory: session.workingMemory || '',
+        contextStats: session.lastContextStats || null,
+        alreadyRunning: true,
+      };
+    }
+
+    const subMsgs = store.getMessages(sessionId).filter((m) => m && m.role !== 'system');
+    const coord = store.getCoordinator(sessionId);
+    const coordMsgs = (coord?.messages || []).filter((m) => m && m.role !== 'system');
+
+    // Compact everything except the freshest tail (last 6 messages) when long, or all messages when shorter
+    const subSlice = subMsgs.length > 8 ? subMsgs.slice(0, subMsgs.length - 6) : subMsgs;
+    const coordSlice = coordMsgs.length > 8 ? coordMsgs.slice(0, coordMsgs.length - 6) : coordMsgs;
+    const toCompact = [...subSlice, ...coordSlice];
+
+    if (toCompact.length === 0) {
+      return {
+        session,
+        workingMemory: session.workingMemory || '',
+        contextStats: session.lastContextStats || null,
+        compactedCount: 0,
+      };
+    }
+
+    runtime.compactionInFlight = true;
+    try {
+      const tier = coordMsgs.length >= subMsgs.length && coordMsgs.length > 0 ? 'coordinator' : 'subordinate';
+      const { provider, model } = resolveProviderAndModel(session, tier);
+      const nextMemory = await summarizeIntoWorkingMemory({
+        sessionId,
+        tier,
+        provider,
+        model,
+        existingMemory: session.workingMemory || '',
+        droppedMessages: toCompact,
+      });
+
+      const budget = resolveContextBudget({ session, provider, model });
+      const activeMsgs = tier === 'coordinator' ? coordMsgs : subMsgs;
+      const meta = buildPromptWindow(activeMsgs, { maxChars: budget.maxChars, returnMeta: true });
+      const nextStats = {
+        tier,
+        providerId: provider?.id || '',
+        model: model || '',
+        mode: budget.mode,
+        tierLabel: budget.tierLabel,
+        usedTokens: estimateTokens(meta.keptChars),
+        budgetTokens: budget.maxTokens,
+        totalHistoryTokens: estimateTokens(meta.totalChars),
+        systemTokens: session.lastContextStats?.systemTokens || 0,
+        memoryTokens: estimateTokens(nextMemory.length),
+        modelContextTokens: budget.modelContextTokens,
+        droppedCount: meta.droppedCount,
+        trimmedToolCount: meta.trimmedToolCount,
+        updatedAt: new Date().toISOString(),
+      };
+
+      const updated = store.updateSession(sessionId, {
+        workingMemory: nextMemory,
+        memoryWatermarks: {
+          subordinate: Math.max(Number(session.memoryWatermarks?.subordinate || 0), subSlice.length),
+          coordinator: Math.max(Number(session.memoryWatermarks?.coordinator || 0), coordSlice.length),
+        },
+        lastContextStats: nextStats,
+      });
+
+      const sysMsg = store.appendMessage(sessionId, {
+        role: 'system',
+        content: `Compacted ${toCompact.length} messages into Session Working Memory (~${nextStats.memoryTokens.toLocaleString()} tokens). Full raw logs remain saved on disk.`,
+      });
+      emitEvent({ type: 'message_added', sessionId, message: sysMsg });
+      emitEvent({ type: 'context_updated', sessionId, contextStats: nextStats });
+      broadcastSession(sessionId);
+
+      return {
+        session: updated,
+        workingMemory: nextMemory,
+        contextStats: nextStats,
+        compactedCount: toCompact.length,
+      };
+    } finally {
+      runtime.compactionInFlight = false;
+    }
+  }
+
   return {
     sendUserMessage,
     approveAndRun,
@@ -1570,6 +1752,7 @@ export function createOrchestrator({
     resumeSession,
     stopSession,
     setPinnedSkills,
+    compactSessionContext,
     buildPromptWindow,
   };
 }

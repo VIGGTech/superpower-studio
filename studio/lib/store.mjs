@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { normalizeContextMode } from './context.mjs';
 
 export const DEFAULT_PROVIDERS = [
   {
@@ -700,6 +701,10 @@ export function createStore({ dataDir }) {
       enabledSkillPacks: normalizeEnabledSkillPacks(input.enabledSkillPacks),
       rules: input.rules || '',
       plan: input.plan || '',
+      workingMemory: input.workingMemory || '',
+      contextMode: normalizeContextMode(input.contextMode),
+      memoryWatermarks: { subordinate: 0, coordinator: 0 },
+      lastContextStats: null,
       tasks: Array.isArray(input.tasks) ? input.tasks : [],
       uninterruptedMode: input.uninterruptedMode !== false,
       startedAt: null,
@@ -731,6 +736,11 @@ export function createStore({ dataDir }) {
       const file = path.join(sessionDir(id), 'session.json');
       const s = readJsonSafe(file, null);
       if (s && s.uninterruptedMode === undefined) s.uninterruptedMode = true;
+      if (s && s.contextMode === undefined) s.contextMode = 'auto';
+      if (s && s.workingMemory === undefined) s.workingMemory = '';
+      if (s && (!s.memoryWatermarks || typeof s.memoryWatermarks !== 'object')) {
+        s.memoryWatermarks = { subordinate: 0, coordinator: 0 };
+      }
       return s;
     } catch {
       return null;
@@ -766,6 +776,9 @@ export function createStore({ dataDir }) {
     }
     if (Object.prototype.hasOwnProperty.call(cleanPatch, 'enabledSkillPacks')) {
       cleanPatch.enabledSkillPacks = normalizeEnabledSkillPacks(cleanPatch.enabledSkillPacks);
+    }
+    if (Object.prototype.hasOwnProperty.call(cleanPatch, 'contextMode')) {
+      cleanPatch.contextMode = normalizeContextMode(cleanPatch.contextMode);
     }
     const next = {
       ...existing,

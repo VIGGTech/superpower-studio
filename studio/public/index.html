@@ -7,7 +7,7 @@
   <meta name="apple-mobile-web-app-title" content="Superpowers Studio">
   <meta name="theme-color" content="#0071e3">
   <title>Superpowers Studio — Multi-Provider Agent Environment</title>
-  <link rel="stylesheet" href="/styles.css?v=5">
+  <link rel="stylesheet" href="/styles.css?v=6">
 </head>
 <body>
   <div id="toast-stack" class="toast-stack" aria-live="polite"></div>
@@ -72,7 +72,7 @@
           </div>
           <div class="session-controls">
             <button id="btn-session-settings" class="btn btn-ghost" title="Edit session title, provider/model per tier, and execution settings">Settings</button>
-            <button id="btn-toggle-rules" class="btn btn-ghost">Rules &amp; Plan</button>
+            <button id="btn-toggle-rules" class="btn btn-ghost">Rules, Plan &amp; Memory</button>
             <button id="btn-approve" class="btn btn-success">Approve &amp; Dispatch</button>
             <button id="btn-pause" class="btn btn-warn hidden">Pause</button>
             <button id="btn-resume" class="btn btn-success hidden">Resume</button>
@@ -99,6 +99,7 @@
               <span id="mission-counts" class="stat-pill">0 / 0 tasks</span>
               <span id="mission-elapsed" class="stat-pill">Elapsed: 0s</span>
               <span id="mission-eta" class="stat-pill eta-pill" title="Estimated remaining time">ETA: —</span>
+              <button type="button" id="mission-ctx-pill" class="stat-pill ctx-pill" title="Active context window budget &amp; working memory (click to inspect or compact)">Ctx —</button>
               <button id="btn-toggle-uninterrupted" class="btn btn-xs btn-success" title="Keep Coordinator &amp; Experts running automatically until 100% of tasks are done (Subordinate auto-recovers stalls)">Auto-Continue: ON</button>
               <button id="btn-jump-coord" class="btn btn-xs btn-ghost">Agents &rarr;</button>
             </div>
@@ -123,6 +124,17 @@
           <div class="rules-actions">
             <button id="btn-save-rules" class="btn btn-secondary btn-sm">Save Draft</button>
             <button id="btn-drawer-approve" class="btn btn-success btn-sm">Lock &amp; Dispatch to Coordinator</button>
+          </div>
+          <div class="memory-section">
+            <div class="memory-header">
+              <label for="memory-textarea">Session Working Memory (pinned across model switches &amp; auto-compacted when history rolls off)</label>
+              <span id="memory-meta-label" class="small muted">0 tok</span>
+            </div>
+            <textarea id="memory-textarea" rows="4" placeholder="Auto-populated when older turns roll off the active context window, or click Compact Context Now before switching models…"></textarea>
+            <div class="rules-actions">
+              <button type="button" id="btn-compact-context" class="btn btn-secondary btn-sm" title="Summarize older chat &amp; Coordinator turns into Working Memory without deleting full logs on disk">Compact Context Now</button>
+              <button type="button" id="btn-save-memory" class="btn btn-secondary btn-sm">Save Memory</button>
+            </div>
           </div>
         </section>
 
@@ -239,6 +251,14 @@
         <label class="inline-check">
           <input type="checkbox" name="uninterruptedMode" checked> Run uninterrupted until 100% complete (no turn-limit pauses; Subordinate auto-recovers stalls)
         </label>
+        <label>Context Window Budget (Studio-Managed Memory + Rolling Compaction)
+          <select name="contextMode" id="ns-context-mode">
+            <option value="auto" selected>Auto — Model Sweet Spot (adapts automatically if you switch models)</option>
+            <option value="compact">Compact (~8K tok) — Best for Groq Free Tier, Local Ollama &amp; Lowest Cost</option>
+            <option value="standard">Standard (~30K tok) — Balanced Speed &amp; Recall</option>
+            <option value="large">Large (~65K tok) — Long-Context Cloud Models</option>
+          </select>
+        </label>
         <div class="tier-model-grid">
           <fieldset>
             <legend>Subordinate (Chat &amp; Interview)</legend>
@@ -337,6 +357,14 @@
             <input type="number" name="maxTurns" id="ss-max-turns" min="1" max="10000" value="100">
           </label>
         </div>
+        <label>Context Window Budget (Studio-Managed Memory + Rolling Compaction)
+          <select name="contextMode" id="ss-context-mode">
+            <option value="auto">Auto — Model Sweet Spot (adapts automatically when you switch models)</option>
+            <option value="compact">Compact (~8K tok) — Best for Groq Free Tier, Local Ollama &amp; Lowest Cost</option>
+            <option value="standard">Standard (~30K tok) — Balanced Speed &amp; Recall</option>
+            <option value="large">Large (~65K tok) — Long-Context Cloud Models</option>
+          </select>
+        </label>
         <div class="session-scope-box">
           <div class="session-scope-header">
             <strong>Skill Packs for This Session</strong>
@@ -673,6 +701,6 @@ node studio/daemon.mjs stop</pre>
     </div>
   </div>
 
-  <script type="module" src="/app.js?v=12"></script>
+  <script type="module" src="/app.js?v=13"></script>
 </body>
 </html>

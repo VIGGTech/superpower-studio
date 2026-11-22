@@ -11,6 +11,7 @@ import { listProviderModels, testProviderConnection } from './lib/providers/inde
 import { getWorkspaceStatus, cleanupSessionWorktree, assessWorkspacePurgeSafety, purgeWorkspaceDirectory } from './lib/worktree.mjs';
 import { resolveScopedPath } from './lib/tools.mjs';
 import { createOrchestrator, computeMissionEta } from './lib/orchestrator.mjs';
+import { resolveContextBudget, estimateMessagesChars, estimateTokens } from './lib/context.mjs';
 import {
   resolvePersistentToken,
   getDaemonStatus,
@@ -715,10 +716,38 @@ export async function createStudioServer({
           const elapsedSeconds = session.startedAt
             ? Math.max(0, Math.round((Date.now() - Date.parse(session.startedAt)) / 1000))
             : 0;
+          const messages = store.getMessages(id);
+          const coordinator = store.getCoordinator(id);
+          const activeTier = session.phase === 'running' || (coordinator?.messages?.length || 0) > 0 ? 'coordinator' : 'subordinate';
+          const activeProviderId = activeTier === 'coordinator'
+            ? (session.coordinatorProviderId || session.providerId)
+            : session.providerId;
+          const activeProvider = store.getProvider(activeProviderId) || null;
+          const activeModel = activeTier === 'coordinator'
+            ? (session.coordinatorModel || (session.coordinatorProviderId ? activeProvider?.defaultModel : session.model) || activeProvider?.defaultModel || '')
+            : (session.model || activeProvider?.defaultModel || '');
+          const budget = resolveContextBudget({ session, provider: activeProvider, model: activeModel });
+          const activeMsgs = activeTier === 'coordinator' && (coordinator?.messages?.length || 0) > 0
+            ? coordinator.messages
+            : messages;
+          const rawChars = estimateMessagesChars(activeMsgs);
+          const contextOverview = {
+            tier: activeTier,
+            providerId: activeProvider?.id || activeProviderId || '',
+            model: activeModel,
+            mode: budget.mode,
+            tierLabel: budget.tierLabel,
+            budgetTokens: budget.maxTokens,
+            modelContextTokens: budget.modelContextTokens,
+            totalHistoryTokens: estimateTokens(rawChars),
+            usedTokens: Math.min(estimateTokens(rawChars), budget.maxTokens),
+            memoryTokens: estimateTokens(String(session.workingMemory || '').length),
+            lastStats: session.lastContextStats || null,
+          };
           return sendJson(res, 200, {
-            session: { ...session, missionSummary: { ...eta, elapsedSeconds } },
-            messages: store.getMessages(id),
-            coordinator: store.getCoordinator(id),
+            session: { ...session, missionSummary: { ...eta, elapsedSeconds }, contextOverview },
+            messages,
+            coordinator,
             experts: store.listExperts(id),
             attachments: store.listAttachments(id),
             latestScreen: store.getLatestScreen(id)?.filename || null,
@@ -739,7 +768,7 @@ export async function createStudioServer({
             'title', 'providerId', 'model',
             'coordinatorProviderId', 'coordinatorModel',
             'expertProviderId', 'expertModel',
-            'rules', 'plan', 'maxTurns', 'uninterruptedMode',
+            'rules', 'plan', 'workingMemory', 'contextMode', 'maxTurns', 'uninterruptedMode',
             'enabledExpertIds', 'enabledSkillPacks',
           ]) {
             if (body[k] !== undefined) allowed[k] = body[k];
@@ -916,6 +945,14 @@ export async function createStudioServer({
         const id = decodeURIComponent(m[1]);
         const session = await orchestrator.stopSession(id);
         return sendJson(res, 200, { session });
+      }
+
+      m = pathname.match(/^\/api\/sessions\/([^/]+)\/compact$/);
+      if (m && method === 'POST') {
+        const id = decodeURIComponent(m[1]);
+        if (!store.getSession(id)) return sendJson(res, 404, { error: 'Session not found' });
+        const result = await orchestrator.compactSessionContext(id);
+        return sendJson(res, 200, { ok: true, ...result });
       }
 
       m = pathname.match(/^\/api\/sessions\/([^/]+)\/coordinator$/);

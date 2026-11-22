@@ -188,6 +188,7 @@ export function buildBootstrapPrompt({
   phase = 'interview',
   rules = '',
   plan = '',
+  workingMemory = '',
   pinnedSkills = [],
   enabledSkillPacks = null,
   shellName = 'shell',
@@ -309,6 +310,9 @@ Workspace: \`${effectiveWorkDir}\` | Shell: \`${shellName}\`
   }
   if (plan && plan.trim()) {
     sections.push(`# Approved Implementation Plan\n${plan.trim()}`);
+  }
+  if (workingMemory && workingMemory.trim()) {
+    sections.push(`# Session Working Memory (Auto-Compacted Context)\n${workingMemory.trim()}`);
   }
   if (extraContext && extraContext.trim()) {
     sections.push(`# Additional Context\n${extraContext.trim()}`);

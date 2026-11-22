@@ -241,6 +241,21 @@ function handleWsEvent(ev) {
       bar.textContent = `Visual Companion click recorded: "${choice}"`;
       bar.classList.remove('hidden');
     }
+  } else if (ev.type === 'context_updated') {
+    if (state.activeDetail?.session && ev.contextStats) {
+      state.activeDetail.session.lastContextStats = ev.contextStats;
+      if (state.activeDetail.session.contextOverview) {
+        state.activeDetail.session.contextOverview = {
+          ...state.activeDetail.session.contextOverview,
+          ...ev.contextStats,
+          lastStats: ev.contextStats,
+        };
+      }
+      renderContextPill(state.activeDetail.session);
+    }
+  } else if (ev.type === 'context_compacted') {
+    showToast(`Auto-compacted ${ev.compactedCount || 'older'} turns into Working Memory (~${formatKTokens(ev.memoryTokens || 0)} tok).`, 'info', 3500);
+    loadSessionDetail(ev.sessionId, { timeline: false });
   } else if (ev.type === 'error') {
     showSessionError(`${ev.source || 'Studio'}: ${ev.message}`);
     showToast(`${ev.source || 'Studio'} error: ${ev.message}`, 'error', 7000);
@@ -538,6 +553,45 @@ async function loadSessionDetail(id, { timeline = true } = {}) {
   } catch { /* ignore if deleted */ }
 }
 
+function formatKTokens(tokens) {
+  const n = Math.max(0, Math.round(Number(tokens) || 0));
+  if (n >= 1000) return `${(n / 1000).toFixed(n >= 10_000 ? 0 : 1)}K`;
+  return String(n);
+}
+
+function renderContextPill(session) {
+  const pill = $('#mission-ctx-pill');
+  if (!pill || !session) return;
+  const ov = session.contextOverview || session.lastContextStats;
+  if (!ov) {
+    pill.textContent = `Ctx (${session.contextMode || 'auto'})`;
+    pill.className = 'stat-pill ctx-pill';
+    return;
+  }
+  const used = Number(ov.usedTokens || 0);
+  const budget = Number(ov.budgetTokens || 0);
+  const totalHist = Number(ov.totalHistoryTokens || used);
+  const memTok = Number(ov.memoryTokens || Math.round(String(session.workingMemory || '').length / 4));
+  const modeLabel = (ov.mode || session.contextMode || 'auto').toUpperCase();
+  const ratio = budget > 0 ? used / budget : 0;
+
+  pill.textContent = `Ctx ${formatKTokens(used)}/${formatKTokens(budget)} tok${memTok > 0 ? ' · Mem' : ''}`;
+  pill.className = `stat-pill ctx-pill${ratio >= 0.88 ? ' warn' : memTok > 0 ? ' compacted' : ''}`;
+  pill.title = [
+    `Context Budget: ${ov.tierLabel || modeLabel} (mode: ${modeLabel})`,
+    `Active Window: ~${used.toLocaleString()} / ${budget.toLocaleString()} tokens`,
+    `Full Raw History on Disk: ~${totalHist.toLocaleString()} tokens`,
+    `Pinned Working Memory: ~${memTok.toLocaleString()} tokens`,
+    ov.model ? `Active Model: ${ov.model} (max ~${formatKTokens(ov.modelContextTokens || 0)} tok)` : '',
+    'Click to view/edit Working Memory or compact context.',
+  ].filter(Boolean).join('\n');
+
+  const memMeta = $('#memory-meta-label');
+  if (memMeta) {
+    memMeta.textContent = `~${memTok.toLocaleString()} tok · ${ov.tierLabel || modeLabel}`;
+  }
+}
+
 function renderMain({ renderTimeline = true } = {}) {
   updateExpertsButtonLabel();
   if (!state.activeDetail) {
@@ -583,11 +637,13 @@ function renderMain({ renderTimeline = true } = {}) {
   $('#btn-stop').classList.toggle('hidden', !(isRunning || isPaused));
   $('#btn-reopen').classList.toggle('hidden', isInterview);
 
-  // Rules & plan fields
+  // Rules, plan & working memory fields
   const rulesTa = $('#rules-textarea');
   const planTa = $('#plan-textarea');
+  const memTa = $('#memory-textarea');
   if (document.activeElement !== rulesTa) rulesTa.value = session.rules || '';
   if (document.activeElement !== planTa) planTa.value = session.plan || '';
+  if (memTa && document.activeElement !== memTa) memTa.value = session.workingMemory || '';
   rulesTa.readOnly = !isInterview;
   planTa.readOnly = !isInterview;
   $('#btn-save-rules').classList.toggle('hidden', !isInterview);
@@ -595,6 +651,7 @@ function renderMain({ renderTimeline = true } = {}) {
   if (session.phase === 'ready' && (session.rules || session.plan)) {
     $('#rules-drawer').classList.remove('hidden');
   }
+  renderContextPill(session);
 
   // Mission Strip: Status + Tasks + Elapsed + Potential ETA
   const cStatus = coordinator?.status || 'idle';
@@ -1730,6 +1787,7 @@ function openSessionSettingsModal() {
   $('#ss-exp-model').value = session.expertModel || '';
   $('#ss-uninterrupted').checked = session.uninterruptedMode !== false;
   $('#ss-max-turns').value = session.maxTurns || 100;
+  if ($('#ss-context-mode')) $('#ss-context-mode').value = session.contextMode || 'auto';
 
   renderSkillPackPicker($('#ss-skill-packs'), session.enabledSkillPacks);
   renderExpertCheckboxPicker($('#ss-expert-picker'), session.enabledExpertIds);
@@ -1751,6 +1809,7 @@ function openNewSessionModal() {
   $('#ns-sub-model').value = '';
   $('#ns-coord-model').value = '';
   $('#ns-exp-model').value = '';
+  if ($('#ns-context-mode')) $('#ns-context-mode').value = 'auto';
   renderSkillPackPicker($('#ns-skill-packs'), null);
   renderExpertCheckboxPicker($('#ns-expert-picker'), null);
   wireExpertPresetButtons($('#ns-expert-presets'), $('#ns-expert-picker'));
@@ -2110,6 +2169,11 @@ $('#btn-jump-coord').onclick = () => {
 $('#btn-toggle-rules').onclick = () => {
   $('#rules-drawer').classList.toggle('hidden');
 };
+if ($('#mission-ctx-pill')) {
+  $('#mission-ctx-pill').onclick = () => {
+    $('#rules-drawer').classList.toggle('hidden');
+  };
+}
 $('#btn-session-settings').onclick = openSessionSettingsModal;
 $('#session-models-pill').style.cursor = 'pointer';
 $('#session-models-pill').onclick = openSessionSettingsModal;
@@ -2128,14 +2192,59 @@ $('#btn-save-rules').onclick = async () => {
       body: JSON.stringify({
         rules: $('#rules-textarea').value,
         plan: $('#plan-textarea').value,
+        workingMemory: $('#memory-textarea') ? $('#memory-textarea').value : undefined,
       }),
     });
-    showToast('Rules & plan draft saved.', 'success', 2500);
+    showToast('Rules, plan & memory saved.', 'success', 2500);
     await loadSessionDetail(state.activeSessionId);
   } catch (err) {
     showToast(err.message, 'error');
   }
 };
+
+if ($('#btn-save-memory')) {
+  $('#btn-save-memory').onclick = async () => {
+    if (!state.activeSessionId) return;
+    try {
+      await api(`/api/sessions/${state.activeSessionId}`, {
+        method: 'PUT',
+        body: JSON.stringify({ workingMemory: $('#memory-textarea')?.value || '' }),
+      });
+      showToast('Session Working Memory saved — active on the next turn.', 'success', 2500);
+      await loadSessionDetail(state.activeSessionId, { timeline: false });
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  };
+}
+
+if ($('#btn-compact-context')) {
+  $('#btn-compact-context').onclick = async () => {
+    if (!state.activeSessionId) return;
+    const btn = $('#btn-compact-context');
+    const orig = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Compacting…';
+    try {
+      const res = await api(`/api/sessions/${state.activeSessionId}/compact`, { method: 'POST' });
+      const tok = res.contextStats?.memoryTokens || 0;
+      const cnt = res.compactedCount || 0;
+      showToast(
+        cnt > 0
+          ? `Compacted ${cnt} messages into Working Memory (~${formatKTokens(tok)} tok).`
+          : 'No older messages needed compaction yet.',
+        cnt > 0 ? 'success' : 'info',
+        3500
+      );
+      await loadSessionDetail(state.activeSessionId);
+    } catch (err) {
+      showToast(`Compaction failed: ${err.message}`, 'error', 5000);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = orig;
+    }
+  };
+}
 
 async function approveActiveSession() {
   if (!state.activeSessionId) return;
@@ -2497,6 +2606,7 @@ $('#form-session-settings').addEventListener('submit', async (e) => {
       expertModel: f.elements.expertModel.value.trim(),
       uninterruptedMode: f.elements.uninterruptedMode.checked,
       maxTurns,
+      contextMode: f.elements.contextMode ? f.elements.contextMode.value : 'auto',
       enabledSkillPacks: readSkillPackPicker($('#ss-skill-packs')),
       enabledExpertIds: readExpertCheckboxPicker($('#ss-expert-picker')),
     };
