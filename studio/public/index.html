@@ -7,7 +7,7 @@
   <meta name="apple-mobile-web-app-title" content="Superpowers Studio">
   <meta name="theme-color" content="#0071e3">
   <title>Superpowers Studio — Multi-Provider Agent Environment</title>
-  <link rel="stylesheet" href="/styles.css?v=6">
+  <link rel="stylesheet" href="/styles.css?v=7">
 </head>
 <body>
   <div id="toast-stack" class="toast-stack" aria-live="polite"></div>
@@ -259,6 +259,7 @@
             <option value="large">Large (~65K tok) — Long-Context Cloud Models</option>
           </select>
         </label>
+        <div id="ns-context-advice" class="context-advice-box hidden"></div>
         <div class="tier-model-grid">
           <fieldset>
             <legend>Subordinate (Chat &amp; Interview)</legend>
@@ -365,6 +366,7 @@
             <option value="large">Large (~65K tok) — Long-Context Cloud Models</option>
           </select>
         </label>
+        <div id="ss-context-advice" class="context-advice-box hidden"></div>
         <div class="session-scope-box">
           <div class="session-scope-header">
             <strong>Skill Packs for This Session</strong>
@@ -548,11 +550,11 @@
 
         <div class="card-box">
           <div class="card-box-header">
-            <span class="card-box-title">Windows Background Service (Optional)</span>
+            <span class="card-box-title">Windows Logon Auto-Start (Background Daemon)</span>
             <span id="svc-win-badge" class="badge">checking…</span>
           </div>
           <div id="svc-win-desc" class="small muted" style="margin-top:4px">
-            Registers a hidden Windows logon background task (<code>SuperpowersStudioBackground</code>) — zero admin/UAC required — so Studio starts silently in the background when you sign in to Windows and keeps running even if you close terminals or Antigravity.
+            Registers a zero-admin per-user startup entry (<code>SuperpowersStudioBackground</code> in <strong>Task Manager &rarr; Startup apps</strong> / <code>HKCU\...\Run</code>) so Studio starts silently when you sign in to Windows and keeps running even if you close terminals or Antigravity.
           </div>
           <div class="card-box-actions">
             <button type="button" id="btn-toggle-win-service" class="btn btn-sm btn-primary">Enable Windows Auto-Start</button>
@@ -701,6 +703,6 @@ node studio/daemon.mjs stop</pre>
     </div>
   </div>
 
-  <script type="module" src="/app.js?v=13"></script>
+  <script type="module" src="/app.js?v=14"></script>
 </body>
 </html>

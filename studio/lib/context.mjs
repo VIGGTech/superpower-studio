@@ -24,13 +24,28 @@ export function resolveModelContextProfile(provider, model) {
   const kind = String(provider?.kind || '').toLowerCase();
   const m = String(model || provider?.defaultModel || '').toLowerCase();
 
-  // Groq free/fast tier has tight request/TPM limits — keep sweet spot fast & compact
-  if (pid === 'groq') {
+  // Google AI Studio Gemma 4 free tier has a strict 15K input tokens/min (TPM) limit
+  if ((pid === 'gemini' || kind === 'gemini') && /gemma-4/.test(m)) {
     return {
       contextTokens: 128_000,
-      sweetSpotChars: 32_000,
-      sweetSpotTokens: 8_000,
-      tierLabel: 'Groq Free/Fast (8K tok sweet spot)',
+      sweetSpotChars: 24_000,
+      sweetSpotTokens: 6_000,
+      tpmLimitTokens: 15_000,
+      tierLabel: 'Google Gemma 4 Free (6K hist · 15K TPM limit)',
+    };
+  }
+
+  // Groq free/fast tier has tight request/TPM limits (6K–12K TPM) — keep history compact
+  if (pid === 'groq') {
+    const isInstant8b = /8b-instant/.test(m);
+    const tpm = isInstant8b ? 6_000 : 12_000;
+    const chars = isInstant8b ? 16_000 : 24_000;
+    return {
+      contextTokens: 128_000,
+      sweetSpotChars: chars,
+      sweetSpotTokens: estimateTokens(chars),
+      tpmLimitTokens: tpm,
+      tierLabel: `Groq Free/Fast (${estimateTokens(chars) / 1000}K hist · ${tpm / 1000}K TPM limit)`,
     };
   }
 
@@ -42,6 +57,7 @@ export function resolveModelContextProfile(provider, model) {
       contextTokens: isMediumOrLarge ? 32_000 : 16_000,
       sweetSpotChars: chars,
       sweetSpotTokens: estimateTokens(chars),
+      tpmLimitTokens: null,
       tierLabel: `Local Ollama (${estimateTokens(chars) / 1000}K tok sweet spot)`,
     };
   }
@@ -52,6 +68,7 @@ export function resolveModelContextProfile(provider, model) {
       contextTokens: 128_000,
       sweetSpotChars: 80_000,
       sweetSpotTokens: 20_000,
+      tpmLimitTokens: null,
       tierLabel: 'OpenRouter Free (20K tok sweet spot)',
     };
   }
@@ -67,6 +84,7 @@ export function resolveModelContextProfile(provider, model) {
       contextTokens: m.includes('abliterated-model') && !m.includes('large') ? 262_000 : 1_000_000,
       sweetSpotChars: 240_000,
       sweetSpotTokens: 60_000,
+      tpmLimitTokens: null,
       tierLabel: 'Long-Context Cloud (60K tok sweet spot)',
     };
   }
@@ -77,6 +95,7 @@ export function resolveModelContextProfile(provider, model) {
       contextTokens: 200_000,
       sweetSpotChars: 180_000,
       sweetSpotTokens: 45_000,
+      tpmLimitTokens: null,
       tierLabel: 'Claude (45K tok sweet spot)',
     };
   }
@@ -87,6 +106,7 @@ export function resolveModelContextProfile(provider, model) {
       contextTokens: 128_000,
       sweetSpotChars: 160_000,
       sweetSpotTokens: 40_000,
+      tpmLimitTokens: null,
       tierLabel: 'Standard Cloud (40K tok sweet spot)',
     };
   }
@@ -96,6 +116,7 @@ export function resolveModelContextProfile(provider, model) {
     contextTokens: 128_000,
     sweetSpotChars: 100_000,
     sweetSpotTokens: 25_000,
+    tpmLimitTokens: null,
     tierLabel: 'Custom API (25K tok sweet spot)',
   };
 }
@@ -110,6 +131,7 @@ export function resolveContextBudget({ session = null, provider = null, model = 
       maxChars: preset.chars,
       maxTokens: estimateTokens(preset.chars),
       modelContextTokens: profile.contextTokens,
+      tpmLimitTokens: profile.tpmLimitTokens || null,
       tierLabel: preset.label,
     };
   }
@@ -118,7 +140,83 @@ export function resolveContextBudget({ session = null, provider = null, model = 
     maxChars: profile.sweetSpotChars,
     maxTokens: profile.sweetSpotTokens,
     modelContextTokens: profile.contextTokens,
+    tpmLimitTokens: profile.tpmLimitTokens || null,
     tierLabel: profile.tierLabel,
+  };
+}
+
+export function assessContextAlignment({
+  provider = null,
+  model = '',
+  contextMode = 'auto',
+  systemTokens = 4_000,
+  totalHistoryTokens = 0,
+  hasWorkingMemory = false,
+} = {}) {
+  const profile = resolveModelContextProfile(provider, model);
+  const budget = resolveContextBudget({ session: { contextMode }, provider, model });
+  const sysTok = Math.max(0, Number(systemTokens) || 0);
+  const histTok = Math.max(0, Number(totalHistoryTokens) || 0);
+  const estHistoryInPrompt = histTok > 0 ? Math.min(histTok, budget.maxTokens) : budget.maxTokens;
+  const estTotalInputTokens = sysTok + estHistoryInPrompt;
+  const warnings = [];
+  let severity = 'ok';
+
+  const raise = (level, msg) => {
+    warnings.push({ level, message: msg });
+    if (level === 'error' || (level === 'warn' && severity === 'ok')) severity = level;
+  };
+
+  if (profile.tpmLimitTokens) {
+    const maxAllowedTotal = profile.tpmLimitTokens;
+    if (sysTok + budget.maxTokens > maxAllowedTotal) {
+      const modeHint = budget.mode !== 'auto'
+        ? 'Switch Context Budget back to Auto (or Compact), or pick a higher-TPM model.'
+        : 'Keep rules/plan/skills concise or pick a higher-TPM model (e.g. gemini-2.5-flash, deepseek-flash, openrouter/free).';
+      if (estTotalInputTokens > maxAllowedTotal || budget.mode !== 'auto') {
+        raise(
+          'error',
+          `${model || provider?.name || 'This model'} has a tight ~${Math.round(maxAllowedTotal / 1000)}K input tokens/min (TPM) limit, while your configured prompt (~${Math.round(sysTok / 1000)}K system + ~${Math.round(budget.maxTokens / 1000)}K history) can exceed it. ${modeHint}`
+        );
+      } else {
+        raise(
+          'warn',
+          `${model || provider?.name || 'This model'} has a ~${Math.round(maxAllowedTotal / 1000)}K input TPM free-tier limit (Auto caps history to ~${Math.round(budget.maxTokens / 1000)}K tok so turns stay under the limit).`
+        );
+      }
+    } else {
+      raise(
+        'warn',
+        `${model || provider?.name || 'This model'} has a ~${Math.round(maxAllowedTotal / 1000)}K input TPM free-tier limit (Auto caps history to ~${Math.round(budget.maxTokens / 1000)}K tok).`
+      );
+    }
+  }
+
+  if (budget.maxTokens + sysTok > profile.contextTokens) {
+    raise(
+      'error',
+      `Selected budget (~${Math.round(budget.maxTokens / 1000)}K tok + ~${Math.round(sysTok / 1000)}K system) exceeds this model's typical ~${Math.round(profile.contextTokens / 1000)}K context window. Choose Auto or Compact.`
+    );
+  } else if (budget.mode !== 'auto' && budget.maxTokens > profile.sweetSpotTokens * 1.5 && profile.contextTokens <= 32_000) {
+    raise(
+      'warn',
+      `Selected budget (~${Math.round(budget.maxTokens / 1000)}K tok) is above the recommended ~${Math.round(profile.sweetSpotTokens / 1000)}K sweet spot for this model.`
+    );
+  }
+
+  if (histTok > budget.maxTokens && !hasWorkingMemory) {
+    raise(
+      'warn',
+      `Session history (~${Math.round(histTok / 1000)}K tok) is larger than this model's ~${Math.round(budget.maxTokens / 1000)}K active window and Working Memory is empty — click "Compact Context Now" (or Auto-Compaction will summarize on the next turn).`
+    );
+  }
+
+  return {
+    severity,
+    warnings,
+    budget,
+    profile,
+    estimatedPromptTokens: estTotalInputTokens,
   };
 }
 

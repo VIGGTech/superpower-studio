@@ -11,7 +11,7 @@ import { listProviderModels, testProviderConnection } from './lib/providers/inde
 import { getWorkspaceStatus, cleanupSessionWorktree, assessWorkspacePurgeSafety, purgeWorkspaceDirectory } from './lib/worktree.mjs';
 import { resolveScopedPath } from './lib/tools.mjs';
 import { createOrchestrator, computeMissionEta } from './lib/orchestrator.mjs';
-import { resolveContextBudget, estimateMessagesChars, estimateTokens } from './lib/context.mjs';
+import { resolveContextBudget, assessContextAlignment, estimateMessagesChars, estimateTokens } from './lib/context.mjs';
 import {
   resolvePersistentToken,
   getDaemonStatus,
@@ -733,6 +733,17 @@ export async function createStudioServer({
             ? coordinator.messages
             : messages;
           const rawChars = estimateMessagesChars(activeMsgs);
+          const totalHistTok = estimateTokens(rawChars);
+          const memTok = estimateTokens(String(session.workingMemory || '').length);
+          const estSystemTok = session.lastContextStats?.systemTokens || (4_000 + memTok + estimateTokens(String(session.rules || '').length + String(session.plan || '').length));
+          const alignment = assessContextAlignment({
+            provider: activeProvider,
+            model: activeModel,
+            contextMode: session.contextMode || 'auto',
+            systemTokens: estSystemTok,
+            totalHistoryTokens: totalHistTok,
+            hasWorkingMemory: memTok > 0,
+          });
           const contextOverview = {
             tier: activeTier,
             providerId: activeProvider?.id || activeProviderId || '',
@@ -741,9 +752,13 @@ export async function createStudioServer({
             tierLabel: budget.tierLabel,
             budgetTokens: budget.maxTokens,
             modelContextTokens: budget.modelContextTokens,
-            totalHistoryTokens: estimateTokens(rawChars),
-            usedTokens: Math.min(estimateTokens(rawChars), budget.maxTokens),
-            memoryTokens: estimateTokens(String(session.workingMemory || '').length),
+            tpmLimitTokens: budget.tpmLimitTokens || null,
+            systemTokens: estSystemTok,
+            totalHistoryTokens: totalHistTok,
+            usedTokens: Math.min(totalHistTok, budget.maxTokens),
+            memoryTokens: memTok,
+            alignmentSeverity: alignment.severity,
+            alignmentWarnings: alignment.warnings,
             lastStats: session.lastContextStats || null,
           };
           return sendJson(res, 200, {

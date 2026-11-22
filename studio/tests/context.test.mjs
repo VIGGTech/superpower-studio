@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import {
   resolveModelContextProfile,
   resolveContextBudget,
+  assessContextAlignment,
   buildOverflowLadder,
   buildPromptWindow,
   buildDeterministicMemoryDelta,
@@ -31,8 +32,52 @@ test('resolveModelContextProfile & resolveContextBudget adapt sweet-spot window 
     provider: { id: 'groq', kind: 'openai-compatible' },
     model: 'openai/gpt-oss-120b',
   });
-  assert.equal(groq.maxChars, 32_000);
-  assert.equal(groq.maxTokens, 8_000);
+  assert.equal(groq.maxChars, 24_000);
+  assert.equal(groq.maxTokens, 6_000);
+  assert.equal(groq.tpmLimitTokens, 12_000);
+
+  const gemma4 = resolveContextBudget({
+    session: { contextMode: 'auto' },
+    provider: { id: 'gemini', kind: 'gemini' },
+    model: 'gemma-4-31b-it',
+  });
+  assert.equal(gemma4.maxChars, 24_000);
+  assert.equal(gemma4.maxTokens, 6_000);
+  assert.equal(gemma4.tpmLimitTokens, 15_000);
+
+  // assessContextAlignment catches TPM & context-size misalignments immediately
+  const gemmaMisaligned = assessContextAlignment({
+    provider: { id: 'gemini', kind: 'gemini' },
+    model: 'gemma-4-31b-it',
+    contextMode: 'large',
+    systemTokens: 5_000,
+    totalHistoryTokens: 40_000,
+    hasWorkingMemory: false,
+  });
+  assert.equal(gemmaMisaligned.severity, 'error');
+  assert.ok(gemmaMisaligned.warnings.some((w) => /15K input tokens\/min/i.test(w.message)));
+
+  const ollamaMisaligned = assessContextAlignment({
+    provider: { id: 'ollama', kind: 'openai-compatible' },
+    model: 'qwen3:8b',
+    contextMode: 'large',
+    systemTokens: 4_000,
+    totalHistoryTokens: 5_000,
+    hasWorkingMemory: false,
+  });
+  assert.equal(ollamaMisaligned.severity, 'error');
+  assert.ok(ollamaMisaligned.warnings.some((w) => /exceeds this model's typical/i.test(w.message)));
+
+  const cleanAlign = assessContextAlignment({
+    provider: { id: 'gemini', kind: 'gemini' },
+    model: 'gemini-4-hydrogen',
+    contextMode: 'auto',
+    systemTokens: 5_000,
+    totalHistoryTokens: 12_000,
+    hasWorkingMemory: false,
+  });
+  assert.equal(cleanAlign.severity, 'ok');
+  assert.equal(cleanAlign.warnings.length, 0);
 
   const ollamaSmall = resolveContextBudget({
     session: { contextMode: 'auto' },
@@ -235,14 +280,16 @@ test('HTTP API exposes contextOverview, contextMode updates, and POST /api/sessi
     assert.equal(d1.session.contextOverview.budgetTokens, 60_000);
     assert.equal(d1.session.contextOverview.mode, 'auto');
 
-    // Switch model to Groq + test instant budget adaptation on GET
+    // Switch model to Groq + test instant budget adaptation & TPM warning on GET
     await fetch(`${base}/api/sessions/${session.id}`, {
       method: 'PUT',
       headers,
       body: JSON.stringify({ providerId: 'groq', model: 'openai/gpt-oss-120b' }),
     });
     const d2 = await (await fetch(`${base}/api/sessions/${session.id}`, { headers })).json();
-    assert.equal(d2.session.contextOverview.budgetTokens, 8_000);
+    assert.equal(d2.session.contextOverview.budgetTokens, 6_000);
+    assert.equal(d2.session.contextOverview.tpmLimitTokens, 12_000);
+    assert.ok(['warn', 'error'].includes(d2.session.contextOverview.alignmentSeverity));
 
     // Trigger manual compaction endpoint (uses deterministic fallback since no real API key)
     const compactRes = await fetch(`${base}/api/sessions/${session.id}/compact`, {

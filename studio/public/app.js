@@ -574,15 +574,18 @@ function renderContextPill(session) {
   const memTok = Number(ov.memoryTokens || Math.round(String(session.workingMemory || '').length / 4));
   const modeLabel = (ov.mode || session.contextMode || 'auto').toUpperCase();
   const ratio = budget > 0 ? used / budget : 0;
+  const sev = ov.alignmentSeverity || 'ok';
+  const warnLines = Array.isArray(ov.alignmentWarnings) ? ov.alignmentWarnings.map((w) => `⚠ ${w.message}`) : [];
 
-  pill.textContent = `Ctx ${formatKTokens(used)}/${formatKTokens(budget)} tok${memTok > 0 ? ' · Mem' : ''}`;
-  pill.className = `stat-pill ctx-pill${ratio >= 0.88 ? ' warn' : memTok > 0 ? ' compacted' : ''}`;
+  pill.textContent = `${sev === 'error' ? '⚠ ' : ''}Ctx ${formatKTokens(used)}/${formatKTokens(budget)} tok${memTok > 0 ? ' · Mem' : ''}`;
+  pill.className = `stat-pill ctx-pill${sev === 'error' ? ' danger' : (sev === 'warn' || ratio >= 0.88) ? ' warn' : memTok > 0 ? ' compacted' : ''}`;
   pill.title = [
     `Context Budget: ${ov.tierLabel || modeLabel} (mode: ${modeLabel})`,
     `Active Window: ~${used.toLocaleString()} / ${budget.toLocaleString()} tokens`,
     `Full Raw History on Disk: ~${totalHist.toLocaleString()} tokens`,
     `Pinned Working Memory: ~${memTok.toLocaleString()} tokens`,
-    ov.model ? `Active Model: ${ov.model} (max ~${formatKTokens(ov.modelContextTokens || 0)} tok)` : '',
+    ov.model ? `Active Model: ${ov.model} (max ~${formatKTokens(ov.modelContextTokens || 0)} tok${ov.tpmLimitTokens ? `, ~${formatKTokens(ov.tpmLimitTokens)} TPM limit` : ''})` : '',
+    ...warnLines,
     'Click to view/edit Working Memory or compact context.',
   ].filter(Boolean).join('\n');
 
@@ -952,17 +955,21 @@ function renderAgentsAndMissionTab() {
   const nextTasks = tasks.filter((t) => t.status === 'pending');
   const doneTasks = tasks.filter((t) => t.status === 'done' || t.status === 'failed');
 
+  const isActivelyRunning = session.phase === 'running' && (coordinator?.status === 'running' || (experts || []).some((e) => e.status === 'running'));
   const renderTaskRow = (t) => {
+    const isStalledInProgress = t.status === 'in_progress' && !isActivelyRunning;
+    const badgeClass = isStalledInProgress ? 'paused' : t.status;
+    const badgeText = isStalledInProgress ? (session.phase === 'failed' ? 'stalled' : 'paused') : t.status.replace('_', ' ');
     const dur = t.durationMs
       ? formatDuration(t.durationMs / 1000)
       : (t.startedAt && t.status === 'in_progress'
           ? `${formatDuration((Date.now() - Date.parse(t.startedAt)) / 1000)} elapsed`
           : (t.estimateSec ? `est ~${formatDuration(t.estimateSec)}` : ''));
     return `
-      <div class="task-row ${escapeHtml(t.status)}">
+      <div class="task-row ${escapeHtml(badgeClass)}">
         <div class="task-row-top">
-          <span>${t.status === 'done' ? '✓ ' : t.status === 'in_progress' ? '● ' : '○ '}${escapeHtml(t.title)}</span>
-          <span class="badge ${escapeHtml(t.status)}">${escapeHtml(t.status.replace('_', ' '))}</span>
+          <span>${t.status === 'done' ? '✓ ' : t.status === 'in_progress' ? (isStalledInProgress ? '⏸ ' : '● ') : '○ '}${escapeHtml(t.title)}</span>
+          <span class="badge ${escapeHtml(badgeClass)}">${escapeHtml(badgeText)}</span>
         </div>
         <div class="task-row-sub">
           ${t.assignedAgent ? `<span>Agent: <strong>${escapeHtml(t.assignedAgent)}</strong></span>` : ''}
@@ -975,7 +982,7 @@ function renderAgentsAndMissionTab() {
   const missionBoardHtml = `
     <div class="mission-board">
       <div class="board-group">
-        <div class="board-group-header"><span>Working On</span><span>${workingTasks.length}</span></div>
+        <div class="board-group-header"><span>${isActivelyRunning ? 'Working On' : 'Working On (idle — resume to continue)'}</span><span>${workingTasks.length}</span></div>
         ${workingTasks.length ? workingTasks.map(renderTaskRow).join('') : '<div class="small muted">Nothing actively executing yet.</div>'}
       </div>
       <div class="board-group">
@@ -1517,7 +1524,7 @@ function getProviderModelOptions(provider) {
   return [...new Set(raw.map((m) => String(m || '').trim()).filter(Boolean))];
 }
 
-function syncModelCombo(selectEl, inputEl, models, { allowInherit = false, inheritLabel = '(Inherit / default)' } = {}) {
+function syncModelCombo(selectEl, inputEl, models, { allowInherit = false, inheritLabel = '(Inherit / default)', onChange = null } = {}) {
   if (!selectEl || !inputEl) return;
   const list = [...new Set((models || []).map((m) => String(m || '').trim()).filter(Boolean))];
   const current = String(inputEl.value || '').trim();
@@ -1525,6 +1532,7 @@ function syncModelCombo(selectEl, inputEl, models, { allowInherit = false, inher
   if (list.length === 0) {
     selectEl.classList.add('hidden');
     inputEl.classList.remove('hidden');
+    inputEl.oninput = onChange ? () => onChange() : null;
     return;
   }
 
@@ -1560,15 +1568,162 @@ function syncModelCombo(selectEl, inputEl, models, { allowInherit = false, inher
       inputEl.value = selectEl.value;
       inputEl.classList.add('hidden');
     }
+    if (onChange) onChange();
   };
+  inputEl.oninput = onChange ? () => onChange() : null;
+}
+
+function resolveClientModelProfile(provider, model) {
+  const pid = String(provider?.id || '').toLowerCase();
+  const kind = String(provider?.kind || '').toLowerCase();
+  const m = String(model || provider?.defaultModel || '').toLowerCase();
+  if ((pid === 'gemini' || kind === 'gemini') && /gemma-4/.test(m)) {
+    return { contextTokens: 128_000, sweetSpotTokens: 6_000, tpmLimitTokens: 15_000, label: 'Google Gemma 4 Free (15K TPM limit)' };
+  }
+  if (pid === 'groq') {
+    const is8b = /8b-instant/.test(m);
+    return {
+      contextTokens: 128_000,
+      sweetSpotTokens: is8b ? 4_000 : 6_000,
+      tpmLimitTokens: is8b ? 6_000 : 12_000,
+      label: `Groq Free (${is8b ? '6K' : '12K'} TPM limit)`,
+    };
+  }
+  if (pid === 'ollama') {
+    const big = /(14b|24b|26b|27b|31b|32b|70b|72b|120b)/.test(m);
+    return { contextTokens: big ? 32_000 : 16_000, sweetSpotTokens: big ? 12_000 : 8_000, tpmLimitTokens: null, label: `Local Ollama (~${big ? '32K' : '16K'} ctx)` };
+  }
+  if (pid === 'openrouter' && (m.endsWith(':free') || m === 'openrouter/free')) {
+    return { contextTokens: 128_000, sweetSpotTokens: 20_000, tpmLimitTokens: null, label: 'OpenRouter Free (20K sweet spot)' };
+  }
+  if (kind === 'gemini' || pid === 'gemini' || pid === 'abliteration' || /(gemini-|abliterated-model|glm-5|kimi-k3|deepseek-v4\.1)/.test(m)) {
+    const ctx = m.includes('abliterated-model') && !m.includes('large') ? 262_000 : 1_000_000;
+    return { contextTokens: ctx, sweetSpotTokens: 60_000, tpmLimitTokens: null, label: `Long-Context (${formatKTokens(ctx)} ctx)` };
+  }
+  if (kind === 'anthropic' || pid === 'anthropic' || m.startsWith('claude-')) {
+    return { contextTokens: 200_000, sweetSpotTokens: 45_000, tpmLimitTokens: null, label: 'Claude (200K ctx)' };
+  }
+  if (pid === 'deepseek' || pid === 'qwen' || pid === 'cerebras' || pid === 'openrouter') {
+    return { contextTokens: 128_000, sweetSpotTokens: 40_000, tpmLimitTokens: null, label: 'Standard Cloud (128K ctx)' };
+  }
+  return { contextTokens: 128_000, sweetSpotTokens: 25_000, tpmLimitTokens: null, label: 'Custom API' };
+}
+
+function renderModalContextAdvice({
+  boxEl,
+  contextModeEl,
+  subProviderEl, subInputEl,
+  coordProviderEl, coordInputEl,
+  expProviderEl, expInputEl,
+  existingSession = null,
+}) {
+  if (!boxEl) return;
+  const findProv = (id) => state.providers.find((x) => x.id === id) || null;
+  const mode = String(contextModeEl?.value || 'auto').toLowerCase();
+  const modeBudgetTok = { compact: 8_000, standard: 30_000, large: 65_000 };
+
+  const subProv = findProv(subProviderEl?.value);
+  const subModel = String(subInputEl?.value || subProv?.defaultModel || '').trim();
+  const coordProv = findProv(coordProviderEl?.value) || subProv;
+  const coordModel = String(coordInputEl?.value || (coordProviderEl?.value ? coordProv?.defaultModel : subModel) || coordProv?.defaultModel || '').trim();
+  const expProv = findProv(expProviderEl?.value) || coordProv;
+  const expModel = String(expInputEl?.value || (expProviderEl?.value ? expProv?.defaultModel : coordModel) || expProv?.defaultModel || '').trim();
+
+  const ov = existingSession?.contextOverview || existingSession?.lastContextStats || null;
+  const sysTok = Number(ov?.systemTokens || 4_500);
+  const histTok = Number(ov?.totalHistoryTokens || 0);
+  const hasMem = Boolean(existingSession?.workingMemory && existingSession.workingMemory.trim().length > 0);
+
+  const tiers = [
+    { name: 'Subordinate', prov: subProv, model: subModel },
+    { name: 'Coordinator', prov: coordProv, model: coordModel },
+    { name: 'Experts', prov: expProv, model: expModel },
+  ];
+
+  let severity = 'ok';
+  const warnings = [];
+  const tierChips = [];
+  const seenKeys = new Set();
+
+  for (const t of tiers) {
+    const prof = resolveClientModelProfile(t.prov, t.model);
+    const budgetTok = mode !== 'auto' && modeBudgetTok[mode] ? modeBudgetTok[mode] : prof.sweetSpotTokens;
+    tierChips.push(`<strong>${t.name}:</strong> ${escapeHtml(t.model || 'default')} → ~${formatKTokens(budgetTok)} tok window${prof.tpmLimitTokens ? ` (${formatKTokens(prof.tpmLimitTokens)} TPM limit)` : ''}`);
+
+    const dedupKey = `${t.prov?.id || ''}|${t.model}|${mode}`;
+    if (seenKeys.has(dedupKey)) continue;
+    seenKeys.add(dedupKey);
+
+    if (prof.tpmLimitTokens) {
+      if (sysTok + budgetTok > prof.tpmLimitTokens) {
+        severity = 'error';
+        warnings.push(`${t.name} (${t.model}) has a ~${formatKTokens(prof.tpmLimitTokens)} input TPM limit, while your configured prompt (~${formatKTokens(sysTok)} system + ~${formatKTokens(budgetTok)} history) exceeds it.${mode !== 'auto' ? ' Switch Context Budget to Auto or pick a higher-TPM model.' : ' Consider a higher-TPM model (gemini-2.5-flash, deepseek-flash, openrouter/free) if this session has long rules/skills.'}`);
+      } else {
+        if (severity === 'ok') severity = 'warn';
+        warnings.push(`${t.name} (${t.model}) has a ~${formatKTokens(prof.tpmLimitTokens)} free-tier TPM limit — Auto keeps history compact (~${formatKTokens(budgetTok)} tok) so turns fit safely.`);
+      }
+    }
+    if (budgetTok + sysTok > prof.contextTokens) {
+      severity = 'error';
+      warnings.push(`${t.name} (${t.model}): ~${formatKTokens(budgetTok)} tok budget + ~${formatKTokens(sysTok)} system exceeds its ~${formatKTokens(prof.contextTokens)} context window.`);
+    } else if (histTok > budgetTok && !hasMem) {
+      if (severity === 'ok') severity = 'warn';
+      warnings.push(`Existing session history (~${formatKTokens(histTok)} tok) exceeds ${t.name}'s ~${formatKTokens(budgetTok)} tok window — Auto-Compaction (or Compact Context Now) will pin older decisions into Working Memory.`);
+    }
+  }
+
+  const title = severity === 'error'
+    ? '⚠ Token / Rate-Limit Misalignment Detected'
+    : severity === 'warn'
+      ? 'ℹ Context & Rate-Limit Heads-Up'
+      : '✓ Context Window Aligned';
+
+  const quickFixBtn = (severity === 'error' && mode !== 'auto' && contextModeEl)
+    ? '<button type="button" class="btn btn-xs btn-secondary" data-fix-ctx="auto">Switch to Auto</button>'
+    : '';
+
+  boxEl.className = `context-advice-box ${severity}`;
+  boxEl.innerHTML = `
+    <div class="context-advice-row">
+      <span class="context-advice-title">${title}</span>
+      ${quickFixBtn}
+    </div>
+    <div class="small muted">${tierChips.join(' · ')}</div>
+    ${warnings.map((w) => `<div class="context-advice-warn">• ${escapeHtml(w)}</div>`).join('')}
+  `;
+
+  const fixEl = boxEl.querySelector('[data-fix-ctx]');
+  if (fixEl && contextModeEl) {
+    fixEl.onclick = () => {
+      contextModeEl.value = fixEl.dataset.fixCtx;
+      renderModalContextAdvice({
+        boxEl, contextModeEl,
+        subProviderEl, subInputEl,
+        coordProviderEl, coordInputEl,
+        expProviderEl, expInputEl,
+        existingSession,
+      });
+    };
+  }
 }
 
 function bindTierModelCombos({
   subProviderEl, subSelectEl, subInputEl,
   coordProviderEl, coordSelectEl, coordInputEl,
   expProviderEl, expSelectEl, expInputEl,
+  contextModeEl = null,
+  adviceBoxEl = null,
+  existingSession = null,
 }) {
   const findProv = (id) => state.providers.find((x) => x.id === id) || null;
+  const updateAdvice = () => renderModalContextAdvice({
+    boxEl: adviceBoxEl,
+    contextModeEl,
+    subProviderEl, subInputEl,
+    coordProviderEl, coordInputEl,
+    expProviderEl, expInputEl,
+    existingSession,
+  });
 
   const refresh = (changedTier = null) => {
     const subProv = findProv(subProviderEl.value);
@@ -1585,20 +1740,24 @@ function bindTierModelCombos({
       expInputEl.value = expProviderEl.value ? (findProv(expProviderEl.value)?.defaultModel || '') : '';
     }
 
-    syncModelCombo(subSelectEl, subInputEl, getProviderModelOptions(subProv), { allowInherit: false });
+    syncModelCombo(subSelectEl, subInputEl, getProviderModelOptions(subProv), { allowInherit: false, onChange: updateAdvice });
     syncModelCombo(coordSelectEl, coordInputEl, getProviderModelOptions(coordProv), {
       allowInherit: true,
       inheritLabel: coordProviderEl.value ? `(Provider default: ${coordProv?.defaultModel || 'default'})` : '(Same as Subordinate)',
+      onChange: updateAdvice,
     });
     syncModelCombo(expSelectEl, expInputEl, getProviderModelOptions(expProv), {
       allowInherit: true,
       inheritLabel: expProviderEl.value ? `(Provider default: ${expProv?.defaultModel || 'default'})` : '(Same as Coordinator)',
+      onChange: updateAdvice,
     });
+    updateAdvice();
   };
 
   subProviderEl.onchange = () => refresh('sub');
   coordProviderEl.onchange = () => refresh('coord');
   expProviderEl.onchange = () => refresh('exp');
+  if (contextModeEl) contextModeEl.onchange = updateAdvice;
   refresh(null);
 }
 
@@ -1797,6 +1956,9 @@ function openSessionSettingsModal() {
     subProviderEl: $('#ss-sub-provider'), subSelectEl: $('#ss-sub-model-select'), subInputEl: $('#ss-sub-model'),
     coordProviderEl: $('#ss-coord-provider'), coordSelectEl: $('#ss-coord-model-select'), coordInputEl: $('#ss-coord-model'),
     expProviderEl: $('#ss-exp-provider'), expSelectEl: $('#ss-exp-model-select'), expInputEl: $('#ss-exp-model'),
+    contextModeEl: $('#ss-context-mode'),
+    adviceBoxEl: $('#ss-context-advice'),
+    existingSession: session,
   });
   $('#modal-session-settings').classList.remove('hidden');
 }
@@ -1817,6 +1979,9 @@ function openNewSessionModal() {
     subProviderEl: $('#ns-sub-provider'), subSelectEl: $('#ns-sub-model-select'), subInputEl: $('#ns-sub-model'),
     coordProviderEl: $('#ns-coord-provider'), coordSelectEl: $('#ns-coord-model-select'), coordInputEl: $('#ns-coord-model'),
     expProviderEl: $('#ns-exp-provider'), expSelectEl: $('#ns-exp-model-select'), expInputEl: $('#ns-exp-model'),
+    contextModeEl: $('#ns-context-mode'),
+    adviceBoxEl: $('#ns-context-advice'),
+    existingSession: null,
   });
   $('#modal-new-session').classList.remove('hidden');
 }
@@ -1923,7 +2088,7 @@ async function refreshServiceModal() {
       winBtn.disabled = true;
       winBtn.textContent = 'Windows Only';
     } else if (win.installed) {
-      winBadge.textContent = 'enabled';
+      winBadge.textContent = win.method === 'registry-run' ? 'enabled · startup apps' : 'enabled · task scheduler';
       winBadge.className = 'badge completed';
       winBtn.disabled = false;
       winBtn.className = 'btn btn-sm btn-warn';
