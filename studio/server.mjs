@@ -230,8 +230,10 @@ function readJsonBody(req) {
 }
 
 function sendJson(res, status, data, extraHeaders = {}) {
+  if (res.headersSent) return;
+  const code = Number.isInteger(status) && status >= 100 && status <= 599 ? status : 500;
   const body = JSON.stringify(data);
-  res.writeHead(status, {
+  res.writeHead(code, {
     'Content-Type': 'application/json; charset=utf-8',
     'Cache-Control': 'no-store',
     'X-Content-Type-Options': 'nosniff',
@@ -1070,7 +1072,8 @@ export async function createStudioServer({
 
       return sendJson(res, 404, { error: `Route not found: ${method} ${pathname}` });
     } catch (err) {
-      return sendJson(res, err.status || 500, { error: err.message || 'Internal server error' });
+      const httpStatus = Number.isInteger(err?.status) && err.status >= 100 && err.status <= 599 ? err.status : 500;
+      return sendJson(res, httpStatus, { error: err?.message || 'Internal server error' });
     }
   });
 

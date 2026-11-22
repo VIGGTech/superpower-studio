@@ -195,3 +195,44 @@ test('HTTP auth cookie, Origin=null CSRF rejection, sandboxed companion CSP, ski
     fs.rmSync(workDir, { recursive: true, force: true });
   }
 });
+
+test('server sanitizes non-HTTP err.status (e.g. execFileSync exit code 1) to HTTP 500 without crashing', async () => {
+  const dataDir = makeTempDir('sp-srv-err-data-');
+  const workDir = makeTempDir('sp-srv-err-work-');
+  const studio = await createStudioServer({
+    port: 0,
+    dataDir,
+    defaultWorkspace: workDir,
+    token: 'err-status-token',
+    streamChatImpl: async () => {
+      throw Object.assign(new Error('subprocess exited with status 1'), { status: 1 });
+    },
+  });
+  const base = `http://127.0.0.1:${studio.port}`;
+  const headers = { Authorization: 'Bearer err-status-token', 'Content-Type': 'application/json' };
+  try {
+    const createRes = await fetch(`${base}/api/sessions`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ title: 'Err Guard', workspacePath: workDir, providerId: 'abliteration', model: 'm1' }),
+    });
+    const { session } = await createRes.json();
+
+    const msgRes = await fetch(`${base}/api/sessions/${session.id}/messages`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ content: 'Trigger status=1 error' }),
+    });
+    assert.equal(msgRes.status, 500);
+    const errBody = await msgRes.json();
+    assert.match(errBody.error, /subprocess exited with status 1/);
+
+    // Server must still be alive and healthy after handling err.status=1
+    const health = await fetch(`${base}/api/health`);
+    assert.equal(health.status, 200);
+  } finally {
+    await studio.close();
+    fs.rmSync(dataDir, { recursive: true, force: true });
+    fs.rmSync(workDir, { recursive: true, force: true });
+  }
+});
