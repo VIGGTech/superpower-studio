@@ -11,6 +11,7 @@ import { createStudioServer } from '../server.mjs';
 import {
   startDaemon,
   stopDaemon,
+  restartDaemon,
   getDaemonStatus,
   readDaemonLogs,
   installWindowsService,
@@ -455,5 +456,53 @@ test('Windows One-Click Icon generates valid ICO, hidden open VBS launcher, and 
     }
   } finally {
     fs.rmSync(baseDir, { recursive: true, force: true });
+  }
+});
+
+test('POST /api/service/restart returns 202, persists token, and restartDaemon spawns fresh detached PID', async () => {
+  const dataDir = makeTempDir('sp-restart-');
+  let restartCalledWith = null;
+  const studio = await createStudioServer({
+    dataDir,
+    skillsRoot: SKILLS_ROOT,
+    port: 0,
+    host: '127.0.0.1',
+    token: 'restart-persist-token',
+    serviceRestarter: (opts) => {
+      restartCalledWith = opts;
+    },
+  });
+  const base = `http://127.0.0.1:${studio.port}`;
+  try {
+    const boot = await fetch(`${base}/?token=${studio.token}`);
+    const cookie = (boot.headers.get('set-cookie') || '').split(';')[0];
+    const headers = { Cookie: cookie, Origin: base, 'Content-Type': 'application/json' };
+
+    const res = await fetch(`${base}/api/service/restart`, { method: 'POST', headers });
+    assert.equal(res.status, 202);
+    const body = await res.json();
+    assert.equal(body.ok, true);
+    assert.equal(body.restarting, true);
+    assert.equal(body.previousPid, process.pid);
+    assert.ok(restartCalledWith && restartCalledWith.port === studio.port && restartCalledWith.dataDir === dataDir);
+
+    // Token must be persisted so browser reconnects with zero 403
+    const savedTok = fs.readFileSync(path.join(dataDir, 'auth.token'), 'utf8').trim();
+    assert.equal(savedTok, 'restart-persist-token');
+  } finally {
+    await studio.close();
+  }
+
+  // Real detached daemon start -> restartDaemon -> verify fresh PID & healthy
+  const port = await getFreePort();
+  try {
+    const s1 = await startDaemon({ dataDir, port, host: '127.0.0.1' });
+    assert.equal(s1.running, true);
+    const s2 = await restartDaemon({ dataDir, port, host: '127.0.0.1' });
+    assert.equal(s2.running, true);
+    assert.notEqual(s2.pid, s1.pid);
+  } finally {
+    await stopDaemon({ dataDir });
+    fs.rmSync(dataDir, { recursive: true, force: true });
   }
 });

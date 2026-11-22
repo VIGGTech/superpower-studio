@@ -3,6 +3,7 @@ import {
   DEFAULT_DATA_DIR,
   startDaemon,
   stopDaemon,
+  restartDaemon,
   getDaemonStatus,
   readDaemonLogs,
   openStudio,
@@ -18,15 +19,17 @@ const args = process.argv.slice(2);
 const cmd = (args[0] || 'status').toLowerCase();
 
 let port = Number(process.env.SUPERPOWERS_STUDIO_PORT) || 49500;
-let host = process.env.SUPERPOWERS_STUDIO_HOST || '127.0.0.1';
+let host = process.env.SUPERPOWERS_STUDIO_HOST || '';
 let dataDir = process.env.SUPERPOWERS_STUDIO_DATA_DIR || DEFAULT_DATA_DIR;
 let lines = 60;
+let waitPid = null;
 
 for (let i = 1; i < args.length; i++) {
   if (args[i] === '--port' && args[i + 1]) port = Number(args[++i]);
   else if (args[i] === '--host' && args[i + 1]) host = args[++i];
   else if (args[i] === '--data-dir' && args[i + 1]) dataDir = args[++i];
   else if (args[i] === '--lines' && args[i + 1]) lines = Number(args[++i]);
+  else if (args[i] === '--wait-pid' && args[i + 1]) waitPid = Number(args[++i]);
 }
 
 async function main() {
@@ -42,8 +45,7 @@ async function main() {
       break;
     }
     case 'restart': {
-      await stopDaemon({ dataDir });
-      const res = await startDaemon({ dataDir, port, host });
+      const res = await restartDaemon({ dataDir, port, host, waitPid });
       console.log(JSON.stringify(res, null, 2));
       break;
     }

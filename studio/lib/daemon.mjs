@@ -210,6 +210,77 @@ export async function stopDaemon({ dataDir = DEFAULT_DATA_DIR, platform = proces
   return { ok: true, stoppedPid: pid, wasRunning };
 }
 
+export async function waitForPidExit(pid, timeoutMs = 6000) {
+  const num = Number(pid);
+  if (!Number.isInteger(num) || num <= 0) return true;
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline && isPidAlive(num)) {
+    await new Promise((r) => setTimeout(r, 120));
+  }
+  return !isPidAlive(num);
+}
+
+export async function restartDaemon({
+  dataDir = DEFAULT_DATA_DIR,
+  port = Number(process.env.SUPERPOWERS_STUDIO_PORT) || 49500,
+  host = '',
+  token = process.env.SUPERPOWERS_STUDIO_TOKEN || '',
+  waitPid = null,
+  platform = process.platform,
+} = {}) {
+  if (waitPid && Number(waitPid) !== process.pid) {
+    const exited = await waitForPidExit(waitPid, 5000);
+    if (!exited && isPidAlive(Number(waitPid))) {
+      try {
+        if (platform === 'win32') {
+          execFileSync('taskkill.exe', ['/PID', String(waitPid), '/T', '/F'], { stdio: 'ignore', windowsHide: true });
+        } else {
+          process.kill(Number(waitPid), 'SIGKILL');
+        }
+      } catch { /* ignore */ }
+      await waitForPidExit(waitPid, 2000);
+    }
+  }
+  await stopDaemon({ dataDir, platform });
+  return await startDaemon({ dataDir, port, host, token });
+}
+
+export function scheduleDetachedRestart({
+  dataDir = DEFAULT_DATA_DIR,
+  port = 49500,
+  host = '',
+  currentPid = process.pid,
+} = {}) {
+  ensureDir(dataDir);
+  const logFile = path.join(dataDir, 'daemon.log');
+  const logFd = fs.openSync(logFile, 'a');
+  const args = [
+    DAEMON_CLI,
+    'restart',
+    '--port', String(Number(port) || 49500),
+    '--data-dir', dataDir,
+    '--wait-pid', String(Number(currentPid) || process.pid),
+  ];
+  if (host) args.push('--host', String(host));
+
+  const env = { ...process.env, SUPERPOWERS_STUDIO_DATA_DIR: dataDir };
+  if (!host) delete env.SUPERPOWERS_STUDIO_HOST;
+
+  try {
+    const child = spawn(process.execPath, args, {
+      cwd: REPO_ROOT,
+      env,
+      detached: true,
+      windowsHide: true,
+      stdio: ['ignore', logFd, logFd],
+    });
+    child.unref();
+    return { scheduled: true, helperPid: child.pid, args };
+  } finally {
+    try { fs.closeSync(logFd); } catch { /* ignore */ }
+  }
+}
+
 export function readDaemonLogs({ dataDir = DEFAULT_DATA_DIR, lines = 80 } = {}) {
   const logFile = path.join(dataDir, 'daemon.log');
   if (!fs.existsSync(logFile)) return '';

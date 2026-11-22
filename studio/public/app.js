@@ -2557,6 +2557,63 @@ $('#btn-toggle-win-icons').onclick = wrapAction(async () => {
   await refreshServiceModal();
 });
 
+async function restartStudioServer() {
+  const btnMain = $('#btn-restart-server');
+  const btnMob = $('#btn-mobile-restart-now');
+  const origMain = btnMain?.textContent || 'Restart Studio Server';
+  const origMob = btnMob?.textContent || 'Restart Now';
+  if (btnMain) { btnMain.disabled = true; btnMain.textContent = 'Restarting Studio…'; }
+  if (btnMob) { btnMob.disabled = true; btnMob.textContent = 'Restarting…'; }
+
+  try {
+    const res = await api('/api/service/restart', { method: 'POST' });
+    const prevPid = res.previousPid;
+    showToast('Restarting Studio as a detached background daemon…', 'info', 4000);
+
+    const deadline = Date.now() + 18_000;
+    let newHealth = null;
+    await new Promise((r) => setTimeout(r, 600));
+    while (Date.now() < deadline) {
+      try {
+        const hRes = await fetch('/api/health', { cache: 'no-store' });
+        if (hRes.ok) {
+          const h = await hRes.json();
+          if (h?.ok && (!prevPid || h.pid !== prevPid)) {
+            newHealth = h;
+            break;
+          }
+        }
+      } catch {
+        // Expected briefly while old process closes and fresh daemon binds port
+      }
+      await new Promise((r) => setTimeout(r, 450));
+    }
+
+    if (newHealth?.ok) {
+      showToast(
+        `Studio restarted (PID ${newHealth.pid}${newHealth.detached ? ' · Detached Daemon' : ''})!`,
+        'success',
+        4500
+      );
+      await refreshServiceModal();
+      await refreshSessions();
+      if (state.activeSessionId) await loadSessionDetail(state.activeSessionId, { timeline: false });
+    } else {
+      showToast('Restart initiated — refresh the page in a moment if it does not reconnect automatically.', 'warn', 6000);
+    }
+  } finally {
+    if (btnMain) { btnMain.disabled = false; btnMain.textContent = origMain; }
+    if (btnMob) { btnMob.disabled = false; btnMob.textContent = origMob; }
+  }
+}
+
+if ($('#btn-restart-server')) {
+  $('#btn-restart-server').onclick = wrapAction(restartStudioServer);
+}
+if ($('#btn-mobile-restart-now')) {
+  $('#btn-mobile-restart-now').onclick = wrapAction(restartStudioServer);
+}
+
 $('#btn-copy-svc-url').onclick = () => {
   const inp = $('#svc-url-input');
   if (!inp?.value) return;

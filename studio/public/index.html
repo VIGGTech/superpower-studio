@@ -536,6 +536,9 @@
             <button type="button" id="btn-copy-svc-url" class="btn btn-xs btn-secondary">Copy URL</button>
           </div>
           <div class="small muted" style="margin-top:6px">Closing the browser tab never stops running agents — they execute inside this Node.js backend.</div>
+          <div class="card-box-actions">
+            <button type="button" id="btn-restart-server" class="btn btn-sm btn-secondary" title="Cleanly restarts Studio as a detached background daemon, applies network settings, and auto-resumes uninterrupted sessions">Restart Studio Server</button>
+          </div>
         </div>
 
         <div class="card-box">
@@ -586,8 +589,9 @@
           <div class="small muted" style="margin-top:4px">
             Control all sessions from your phone over home Wi-Fi or anywhere via <strong>Tailscale</strong>. Scan the QR code with your phone camera (token stays 100% local — never sent to third parties).
           </div>
-          <div id="svc-mobile-restart-note" class="small hidden" style="margin-top:6px;color:var(--warn);font-weight:600">
-            Restart Studio once so it binds to all network interfaces (0.0.0.0) for phone access.
+          <div id="svc-mobile-restart-note" class="small hidden" style="margin-top:6px;color:var(--warn);font-weight:600;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <span>Restart Studio once so it binds to all network interfaces (0.0.0.0) for phone access.</span>
+            <button type="button" id="btn-mobile-restart-now" class="btn btn-xs btn-warn">Restart Now</button>
           </div>
           <div class="card-box-actions">
             <button type="button" id="btn-toggle-mobile-access" class="btn btn-sm btn-primary">Enable Mobile / LAN &amp; Tailscale Access</button>
@@ -703,6 +707,6 @@ node studio/daemon.mjs stop</pre>
     </div>
   </div>
 
-  <script type="module" src="/app.js?v=14"></script>
+  <script type="module" src="/app.js?v=15"></script>
 </body>
 </html>

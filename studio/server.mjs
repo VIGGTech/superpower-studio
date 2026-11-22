@@ -21,6 +21,7 @@ import {
   getWindowsShortcutsStatus,
   installWindowsShortcuts,
   uninstallWindowsShortcuts,
+  scheduleDetachedRestart,
 } from './lib/daemon.mjs';
 import { discoverMobileEndpoints, isRemoteOriginAllowed } from './lib/network.mjs';
 import { generateQrSvg } from './lib/qr.mjs';
@@ -337,6 +338,7 @@ export async function createStudioServer({
   streamChatImpl,
   windowsServiceController,
   windowsShortcutsController,
+  serviceRestarter,
 } = {}) {
   const effectiveToken = token
     || (persistToken ? resolvePersistentToken(dataDir, process.env.SUPERPOWERS_STUDIO_TOKEN || '') : (process.env.SUPERPOWERS_STUDIO_TOKEN || crypto.randomBytes(24).toString('hex')));
@@ -688,6 +690,35 @@ export async function createStudioServer({
             })
           : scCtrl.uninstall({ dataDir });
         return sendJson(res, 200, { windowsShortcuts: result });
+      }
+      if (pathname === '/api/service/restart' && method === 'POST') {
+        // Ensure auth token is persisted so open browser tabs reconnect seamlessly after restart
+        resolvePersistentToken(dataDir, effectiveToken);
+        const restartInfo = {
+          ok: true,
+          restarting: true,
+          previousPid: process.pid,
+          port: actualPort,
+        };
+        sendJson(res, 202, restartInfo);
+        const doRestart = serviceRestarter || (({ dataDir: dd, port: p }) => {
+          setTimeout(async () => {
+            try {
+              scheduleDetachedRestart({ dataDir: dd, port: p, host: '', currentPid: process.pid });
+            } catch { /* ignore */ }
+            try {
+              await closeServer();
+            } catch { /* ignore */ }
+            process.exit(0);
+          }, 150);
+        });
+        await Promise.resolve(doRestart({
+          dataDir,
+          port: actualPort,
+          currentPid: process.pid,
+          close: closeServer,
+        }));
+        return;
       }
 
       // ----- Sessions -----
@@ -1127,6 +1158,11 @@ export async function createStudioServer({
     }
   }
 
+  const closeServer = async () => {
+    wsServer.close();
+    await new Promise((resolve) => server.close(resolve));
+  };
+
   return {
     server,
     port: actualPort,
@@ -1136,10 +1172,7 @@ export async function createStudioServer({
     store,
     orchestrator,
     autoResumedSessions,
-    async close() {
-      wsServer.close();
-      await new Promise((resolve) => server.close(resolve));
-    },
+    close: closeServer,
   };
 }
 
